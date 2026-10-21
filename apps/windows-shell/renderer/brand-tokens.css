@@ -1,0 +1,146 @@
+@font-face {
+  font-family: "Fredoka";
+  src: url("../assets/fonts/Fredoka-Regular.ttf") format("truetype");
+  font-weight: 400;
+  font-style: normal;
+}
+
+@font-face {
+  font-family: "Fredoka";
+  src: url("../assets/fonts/Fredoka-SemiBold.ttf") format("truetype");
+  font-weight: 600;
+  font-style: normal;
+}
+
+@font-face {
+  font-family: "Fredoka";
+  src: url("../assets/fonts/Fredoka-Bold.ttf") format("truetype");
+  font-weight: 700;
+  font-style: normal;
+}
+
+@font-face {
+  font-family: "Rubik";
+  src: url("../assets/fonts/Rubik-Regular.ttf") format("truetype");
+  font-weight: 400;
+  font-style: normal;
+}
+
+@font-face {
+  font-family: "Rubik";
+  src: url("../assets/fonts/Rubik-Medium.ttf") format("truetype");
+  font-weight: 500;
+  font-style: normal;
+}
+
+@font-face {
+  font-family: "Rubik";
+  src: url("../assets/fonts/Rubik-SemiBold.ttf") format("truetype");
+  font-weight: 600;
+  font-style: normal;
+}
+
+:root {
+  --ccf-accent: #f95d02;
+  --ccf-accent-soft: rgba(249, 93, 2, 0.14);
+  --ccf-accent-strong: rgba(249, 93, 2, 0.24);
+  --ccf-text: #23113c;
+  --ccf-text-soft: #5d4d72;
+  --ccf-text-faint: #8f86a2;
+  --ccf-page: #faf9f7;
+  --ccf-page-warm: #f6f1ea;
+  --ccf-surface: #ffffff;
+  --ccf-surface-muted: #f7f1eb;
+  --ccf-border: rgba(74, 44, 112, 0.1);
+  --ccf-border-strong: rgba(249, 93, 2, 0.18);
+  --ccf-shadow: 0 14px 30px rgba(35, 17, 60, 0.08);
+  --ccf-shadow-strong: 0 24px 50px rgba(35, 17, 60, 0.14);
+  --ccf-success: #1f9d67;
+  --ccf-danger: #da3b34;
+  --ccf-warning: #d17e00;
+  --ccf-radius-md: 18px;
+  --ccf-font-display: "Fredoka", "Segoe UI", sans-serif;
+  --ccf-font-body: "Rubik", "Segoe UI", sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  font-family: var(--ccf-font-body);
+  color: var(--ccf-text);
+}
+
+button,
+input,
+textarea,
+select {
+  font: inherit;
+}
+
+.ccf-card {
+  background: var(--ccf-surface);
+  border: 1px solid var(--ccf-border);
+  border-radius: var(--ccf-radius-md);
+  box-shadow: var(--ccf-shadow);
+}
+
+.ccf-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 40px;
+  padding: 10px 14px;
+  border-radius: 999px;
+  border: 1px solid var(--ccf-border);
+  background: var(--ccf-surface);
+  color: var(--ccf-text);
+  cursor: pointer;
+}
+
+.ccf-button.primary {
+  background: var(--ccf-accent);
+  border-color: var(--ccf-accent);
+  color: #fff;
+}
+
+.ccf-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: var(--ccf-surface-muted);
+  color: var(--ccf-text-soft);
+  border: 1px solid var(--ccf-border);
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.ccf-chip.accent {
+  background: var(--ccf-accent-soft);
+  border-color: var(--ccf-border-strong);
+  color: var(--ccf-accent);
+}
+
+.ccf-input,
+.ccf-select,
+.ccf-textarea {
+  width: 100%;
+  min-height: 42px;
+  padding: 10px 12px;
+  border-radius: 14px;
+  border: 1px solid var(--ccf-border);
+  background: var(--ccf-surface);
+  color: var(--ccf-text);
+}
+
+.ccf-textarea {
+  min-height: 120px;
+  resize: vertical;
+}

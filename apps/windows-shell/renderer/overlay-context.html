@@ -1,0 +1,92 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Chaos Cat Familiar Overlay Context</title>
+    <style>
+      :root {
+        --text: #f7f5ef;
+        --muted: #c7c0b5;
+      }
+
+      html,
+      body {
+        margin: 0;
+        padding: 0;
+        background: transparent;
+        overflow: hidden;
+        font-family: "Segoe UI", sans-serif;
+        color: var(--text);
+      }
+
+      .panel {
+        display: none;
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        background: rgba(12, 15, 21, 0.92);
+        backdrop-filter: blur(16px);
+        box-shadow: 0 16px 36px rgba(0, 0, 0, 0.28);
+        border-radius: 16px;
+        padding: 12px;
+      }
+
+      .panel.visible {
+        display: block;
+      }
+
+      .row {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 10px;
+      }
+
+      .title {
+        font-size: 18px;
+        font-weight: 700;
+      }
+
+      .subtitle {
+        color: var(--muted);
+        font-size: 13px;
+      }
+
+      .pill {
+        padding: 4px 10px;
+        border-radius: 999px;
+        background: rgba(255, 255, 255, 0.16);
+        font-size: 12px;
+      }
+
+      .actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        margin-top: 10px;
+      }
+
+      button {
+        border: 0;
+        border-radius: 999px;
+        padding: 8px 12px;
+        cursor: pointer;
+        background: rgba(255, 255, 255, 0.12);
+        color: var(--text);
+      }
+
+      .range-row {
+        display: flex;
+        gap: 8px;
+        align-items: center;
+        margin-top: 10px;
+      }
+
+      .range-row input[type="range"] {
+        flex: 1;
+      }
+    </style>
+  </head>
+  <body>
+    <main class="panel" id="contextPanel"></main>
+    <script type="module" src="./overlay-context.js"></script>
+  </body>
+</html>

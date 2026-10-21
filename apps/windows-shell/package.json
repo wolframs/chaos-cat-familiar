@@ -1,0 +1,21 @@
+{
+  "name": "@chaos-cat-familiar/windows-shell",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "productName": "Chaos Cat Familiar",
+  "description": "Windows tray companion for Claude Code with overlay approvals and mascot runtime.",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "package:dir": "electron-packager . ChaosCatFamiliar --platform=win32 --arch=x64 --out=../../packaging/windows/input --overwrite --asar --prune=false --icon=../../packaging/windows/assets/pixel-art/ChaosCatFamiliar.ico --executable-name=ChaosCatFamiliar --app-version=0.1.0"
+  },
+  "dependencies": {
+    "@xterm/headless": "^6.0.0",
+    "electron": "^36.0.0",
+    "node-pty": "^1.1.0"
+  },
+  "devDependencies": {
+    "@electron/packager": "^18.3.6"
+  }
+}

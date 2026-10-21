@@ -1,0 +1,12 @@
+.frame-timeline{margin-top:24px}
+.frame-timeline h2{margin:0 0 5px;font-size:17px}
+.frame-timeline p{margin:0 0 10px;font-size:13px;color:#cdc6dd}
+.frame-strip{position:relative;display:flex;gap:8px;overflow-x:auto;padding:3px 3px 12px;scrollbar-color:#8c69a8 #2c2935}
+.frame-tile{box-sizing:border-box;flex:0 0 104px;min-height:142px;margin-right:0;padding:6px;border:2px solid #595165;border-radius:8px;background:#292633;color:#f5f0ff;text-align:left;cursor:pointer;font:12px system-ui}
+.frame-tile:hover{border-color:#c5a7e5}
+.frame-tile:focus-visible{outline:2px solid #e5c5ff;outline-offset:2px}
+.frame-tile.active{border-color:#e0aeff;background:#443152}
+.frame-tile canvas{display:block;width:88px;height:88px;background:#12131b;border-radius:4px;image-rendering:pixelated}
+.frame-tile strong,.frame-tile small{display:block;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+.frame-tile strong{font-size:12px;margin-top:3px}
+.frame-tile small{font-size:11px;color:#d2c5db}

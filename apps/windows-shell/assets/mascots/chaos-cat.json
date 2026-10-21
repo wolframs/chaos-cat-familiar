@@ -1,0 +1,355 @@
+{
+  "version": "2.0",
+  "name": "Chaos Cat Familiar",
+  "canvasName": "notification",
+  "initialNode": "6d0daf67-7211-4fc2-989d-d554c201a532",
+  "autoPlay": true,
+  "animateWhenVisible": true,
+  "nodes": [
+    {
+      "id": "6d0daf67-7211-4fc2-989d-d554c201a532",
+      "name": "Idle",
+      "transparentThumbnailUrl": "./chaos-cat/thumbnails/idle.png"
+    },
+    {
+      "id": "f3473483-472e-42dc-a69b-80329b5c74cd",
+      "name": "Working",
+      "transparentThumbnailUrl": "./chaos-cat/thumbnails/working.png"
+    },
+    {
+      "id": "a95fe867-ef9a-4f81-8b04-64eee249331e",
+      "name": "Needs Attention",
+      "transparentThumbnailUrl": "./chaos-cat/thumbnails/attention.png"
+    },
+    {
+      "id": "a3e442df-572c-4a29-8ec6-76b411361c29",
+      "name": "Thinking",
+      "transparentThumbnailUrl": "./chaos-cat/thumbnails/thinking.png"
+    }
+  ],
+  "edges": [
+    {
+      "id": "b462048c-91f9-4243-a530-2436c3dfbd8e",
+      "source": "6d0daf67-7211-4fc2-989d-d554c201a532",
+      "target": "6d0daf67-7211-4fc2-989d-d554c201a532",
+      "isLoop": true,
+      "duration": 3.77,
+      "conditions": [],
+      "videos": {
+        "webm": "./chaos-cat/loops/idle.webm"
+      }
+    },
+    {
+      "id": "0cb1e88d-567d-46ce-be38-ea309fc7f51f",
+      "source": "f3473483-472e-42dc-a69b-80329b5c74cd",
+      "target": "f3473483-472e-42dc-a69b-80329b5c74cd",
+      "isLoop": true,
+      "duration": 0.75,
+      "conditions": [],
+      "videos": {
+        "webm": "./chaos-cat/loops/working.webm"
+      }
+    },
+    {
+      "id": "a5848e9b-e121-454b-83ec-938dfa58510f",
+      "source": "a95fe867-ef9a-4f81-8b04-64eee249331e",
+      "target": "a95fe867-ef9a-4f81-8b04-64eee249331e",
+      "isLoop": true,
+      "duration": 0.75,
+      "conditions": [],
+      "videos": {
+        "webm": "./chaos-cat/loops/attention.webm"
+      }
+    },
+    {
+      "id": "7b1ddfa4-b41c-4882-8fcb-9d4d58393303",
+      "source": "a3e442df-572c-4a29-8ec6-76b411361c29",
+      "target": "a3e442df-572c-4a29-8ec6-76b411361c29",
+      "isLoop": true,
+      "duration": 0.75,
+      "conditions": [],
+      "videos": {
+        "webm": "./chaos-cat/loops/thinking.webm"
+      }
+    },
+    {
+      "id": "ec211ea2-f8e4-4af2-bd65-9f373562fb29",
+      "source": "6d0daf67-7211-4fc2-989d-d554c201a532",
+      "target": "f3473483-472e-42dc-a69b-80329b5c74cd",
+      "isLoop": false,
+      "duration": 0.565,
+      "conditions": [
+        {
+          "op": "==",
+          "input": "claudeCode::isWorking",
+          "value": true
+        },
+        {
+          "op": "==",
+          "input": "claudeCode::isAlert",
+          "value": false
+        },
+        {
+          "op": "==",
+          "input": "claudeCode::isCompacting",
+          "value": false
+        }
+      ],
+      "videos": {
+        "webm": "./chaos-cat/transitions/idle-to-working.webm"
+      }
+    },
+    {
+      "id": "6fe77849-df83-442d-a149-4e77fb271877",
+      "source": "6d0daf67-7211-4fc2-989d-d554c201a532",
+      "target": "a95fe867-ef9a-4f81-8b04-64eee249331e",
+      "isLoop": false,
+      "duration": 0.565,
+      "conditions": [
+        {
+          "op": "==",
+          "input": "claudeCode::isAlert",
+          "value": true
+        }
+      ],
+      "videos": {
+        "webm": "./chaos-cat/transitions/idle-to-attention.webm"
+      }
+    },
+    {
+      "id": "448bde3f-8276-4003-abb0-b2751d0ccab9",
+      "source": "6d0daf67-7211-4fc2-989d-d554c201a532",
+      "target": "a3e442df-572c-4a29-8ec6-76b411361c29",
+      "isLoop": false,
+      "duration": 1.055,
+      "conditions": [
+        {
+          "op": "==",
+          "input": "claudeCode::isCompacting",
+          "value": true
+        },
+        {
+          "op": "==",
+          "input": "claudeCode::isAlert",
+          "value": false
+        }
+      ],
+      "videos": {
+        "webm": "./chaos-cat/transitions/idle-to-thinking.webm"
+      }
+    },
+    {
+      "id": "04df2a1e-2a68-4569-8fbc-54f635d69f74",
+      "source": "f3473483-472e-42dc-a69b-80329b5c74cd",
+      "target": "6d0daf67-7211-4fc2-989d-d554c201a532",
+      "isLoop": false,
+      "duration": 0.605,
+      "conditions": [
+        {
+          "op": "==",
+          "input": "claudeCode::isIdle",
+          "value": true
+        },
+        {
+          "op": "==",
+          "input": "claudeCode::isAlert",
+          "value": false
+        },
+        {
+          "op": "==",
+          "input": "claudeCode::isCompacting",
+          "value": false
+        }
+      ],
+      "videos": {
+        "webm": "./chaos-cat/transitions/working-to-idle.webm"
+      }
+    },
+    {
+      "id": "9bd4bdc5-e382-4aa7-9c8e-ba43c9f84b70",
+      "source": "f3473483-472e-42dc-a69b-80329b5c74cd",
+      "target": "a95fe867-ef9a-4f81-8b04-64eee249331e",
+      "isLoop": false,
+      "duration": 0.355,
+      "conditions": [
+        {
+          "op": "==",
+          "input": "claudeCode::isAlert",
+          "value": true
+        }
+      ],
+      "videos": {
+        "webm": "./chaos-cat/transitions/working-to-attention.webm"
+      }
+    },
+    {
+      "id": "6bf3506a-b775-4ec5-bdb5-b1ac6a5b0804",
+      "source": "a95fe867-ef9a-4f81-8b04-64eee249331e",
+      "target": "6d0daf67-7211-4fc2-989d-d554c201a532",
+      "isLoop": false,
+      "duration": 0.605,
+      "conditions": [
+        {
+          "op": "==",
+          "input": "claudeCode::isIdle",
+          "value": true
+        },
+        {
+          "op": "==",
+          "input": "claudeCode::isAlert",
+          "value": false
+        },
+        {
+          "op": "==",
+          "input": "claudeCode::isCompacting",
+          "value": false
+        }
+      ],
+      "videos": {
+        "webm": "./chaos-cat/transitions/attention-to-idle.webm"
+      }
+    },
+    {
+      "id": "6f1ee7f8-e33e-4a55-8774-5a196e6015a8",
+      "source": "a95fe867-ef9a-4f81-8b04-64eee249331e",
+      "target": "f3473483-472e-42dc-a69b-80329b5c74cd",
+      "isLoop": false,
+      "duration": 0.355,
+      "conditions": [
+        {
+          "op": "==",
+          "input": "claudeCode::isWorking",
+          "value": true
+        },
+        {
+          "op": "==",
+          "input": "claudeCode::isAlert",
+          "value": false
+        },
+        {
+          "op": "==",
+          "input": "claudeCode::isCompacting",
+          "value": false
+        }
+      ],
+      "videos": {
+        "webm": "./chaos-cat/transitions/attention-to-working.webm"
+      }
+    },
+    {
+      "id": "5c7a18c2-3d3f-4848-a8dd-42e7bf46b6bd",
+      "source": "a95fe867-ef9a-4f81-8b04-64eee249331e",
+      "target": "a3e442df-572c-4a29-8ec6-76b411361c29",
+      "isLoop": false,
+      "duration": 0.355,
+      "conditions": [
+        {
+          "op": "==",
+          "input": "claudeCode::isCompacting",
+          "value": true
+        },
+        {
+          "op": "==",
+          "input": "claudeCode::isAlert",
+          "value": false
+        }
+      ],
+      "videos": {
+        "webm": "./chaos-cat/transitions/attention-to-thinking.webm"
+      }
+    },
+    {
+      "id": "c5d0f868-eeab-47b5-a404-b66317857b45",
+      "source": "f3473483-472e-42dc-a69b-80329b5c74cd",
+      "target": "a3e442df-572c-4a29-8ec6-76b411361c29",
+      "isLoop": false,
+      "duration": 0.355,
+      "conditions": [
+        {
+          "op": "==",
+          "input": "claudeCode::isCompacting",
+          "value": true
+        },
+        {
+          "op": "==",
+          "input": "claudeCode::isAlert",
+          "value": false
+        }
+      ],
+      "videos": {
+        "webm": "./chaos-cat/transitions/working-to-thinking.webm"
+      }
+    },
+    {
+      "id": "930803db-9c94-4718-b66c-2997b5ebb026",
+      "source": "a3e442df-572c-4a29-8ec6-76b411361c29",
+      "target": "6d0daf67-7211-4fc2-989d-d554c201a532",
+      "isLoop": false,
+      "duration": 0.605,
+      "conditions": [
+        {
+          "op": "==",
+          "input": "claudeCode::isIdle",
+          "value": true
+        },
+        {
+          "op": "==",
+          "input": "claudeCode::isAlert",
+          "value": false
+        },
+        {
+          "op": "==",
+          "input": "claudeCode::isCompacting",
+          "value": false
+        }
+      ],
+      "videos": {
+        "webm": "./chaos-cat/transitions/thinking-to-idle.webm"
+      }
+    },
+    {
+      "id": "2d5c3e4f-f726-413a-adc2-383fb68c234d",
+      "source": "a3e442df-572c-4a29-8ec6-76b411361c29",
+      "target": "f3473483-472e-42dc-a69b-80329b5c74cd",
+      "isLoop": false,
+      "duration": 0.355,
+      "conditions": [
+        {
+          "op": "==",
+          "input": "claudeCode::isWorking",
+          "value": true
+        },
+        {
+          "op": "==",
+          "input": "claudeCode::isAlert",
+          "value": false
+        },
+        {
+          "op": "==",
+          "input": "claudeCode::isCompacting",
+          "value": false
+        }
+      ],
+      "videos": {
+        "webm": "./chaos-cat/transitions/thinking-to-working.webm"
+      }
+    },
+    {
+      "id": "f3b195ea-2aa2-49f9-ba1d-9b1f0cb624a1",
+      "source": "a3e442df-572c-4a29-8ec6-76b411361c29",
+      "target": "a95fe867-ef9a-4f81-8b04-64eee249331e",
+      "isLoop": false,
+      "duration": 0.355,
+      "conditions": [
+        {
+          "op": "==",
+          "input": "claudeCode::isAlert",
+          "value": true
+        }
+      ],
+      "videos": {
+        "webm": "./chaos-cat/transitions/thinking-to-attention.webm"
+      }
+    }
+  ]
+}

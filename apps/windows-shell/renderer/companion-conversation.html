@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Work Companion Conversation</title>
+    <link rel="stylesheet" href="./companion-conversation.css" />
+  </head>
+  <body>
+    <main class="surface" aria-label="Work companion conversation">
+      <h1 id="title" class="sr-only">Work companion</h1>
+      <section class="console" id="console" aria-label="Terminal controls">
+        <div class="console-screen" id="consoleScreen" role="log" aria-label="Live terminal screen" tabindex="0"></div>
+      </section>
+      <div class="prompt" id="prompt" role="status"></div>
+      <div class="composer">
+        <div class="attachment-row" id="attachments" aria-label="Images attached to the next message" hidden></div>
+        <textarea class="draft" id="draft" aria-label="Message the work companion" placeholder="Message the work companion…" rows="2"></textarea>
+        <div class="composer-bottom">
+          <span class="presence" id="presence" data-phase="offline">Offline</span>
+          <span class="hint" title="Ctrl+numpad +/- changes text size; Ctrl+0 resets it. Empty input: arrows, Tab, Esc and Enter control Claude's prompts.">Enter to send · Shift+Enter for a new line · Ctrl +/− text</span>
+          <div class="actions"><button class="button" id="start" type="button">Start</button><button class="button" id="attach" type="button" title="Attach images, paste a screenshot, or drop images here">Attach</button><button class="button stop" id="stop" type="button" disabled>Stop</button><button class="button send" id="send" type="button" disabled>Send ↑</button></div>
+        </div>
+      </div>
+    </main>
+    <script type="module" src="./companion-conversation.js"></script>
+    <script type="module" src="./design-reload.js"></script>
+  </body>
+</html>

@@ -1,0 +1,121 @@
+:root {
+  color-scheme: dark;
+  --ink: #121212;
+  --neutral: #8a8a8a;
+  --blue: #609dff;
+  --green: #3fbf3f;
+  --yellow: #c9b400;
+  --red: #e03c3c;
+  --orange: #e28246;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  background: transparent;
+  overflow: hidden;
+}
+
+.companion-status {
+  box-sizing: border-box;
+  display: grid;
+  align-content: start;
+  gap: 4px;
+  width: 100%;
+  padding: 8px;
+  font: 600 12px/1.2 "CaskaydiaCove Nerd Font", "Cascadia Code", Consolas, monospace;
+  font-variant-numeric: tabular-nums;
+  user-select: none;
+}
+
+.gauge-row {
+  display: flex;
+  flex-wrap: nowrap;
+  align-items: center;
+  min-width: 0;
+  min-height: 29px;
+  background: transparent;
+  filter: drop-shadow(0 4px 8px rgba(0, 0, 0, 0.26));
+}
+
+.gauge-block,
+.gauge-chip {
+  --tone: var(--neutral);
+  color: var(--ink);
+  background: var(--tone);
+}
+
+.tone-neutral { --tone: var(--neutral); }
+.tone-blue { --tone: var(--blue); }
+.tone-green { --tone: var(--green); }
+.tone-yellow { --tone: var(--yellow); }
+.tone-red { --tone: var(--red); }
+.tone-orange { --tone: var(--orange); }
+
+.gauge-block {
+  position: relative;
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 5px;
+  height: 29px;
+  padding: 0 9px;
+  white-space: nowrap;
+}
+
+.gauge-block:first-child { border-radius: 9px 0 0 9px; }
+.gauge-block:last-child { border-radius: 0 9px 9px 0; }
+.gauge-block:only-child { border-radius: 9px; }
+.gauge-block + .gauge-block { padding-left: 17px; }
+.gauge-block:not(:last-child)::after {
+  content: "";
+  position: absolute;
+  z-index: 2;
+  top: 0;
+  right: -10px;
+  border-top: 14.5px solid transparent;
+  border-bottom: 14.5px solid transparent;
+  border-left: 10px solid var(--tone);
+}
+
+.gauge-label { font-weight: 800; }
+.gauge-value { font-weight: 650; }
+.gauge-detail { color: rgba(18, 18, 18, 0.66); }
+
+.gauge-chip {
+  display: inline-flex;
+  align-items: center;
+  min-height: 21px;
+  margin-left: 2px;
+  padding: 0 6px;
+  border-radius: 5px;
+  font-weight: 800;
+}
+
+.gauge-bar {
+  display: inline-block;
+  position: relative;
+  width: 54px;
+  height: 13px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--tone) 40%, var(--ink));
+}
+
+[data-gauge-row="context"] .gauge-bar { width: 92px; }
+
+.gauge-bar-fill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  border-radius: inherit;
+  background: linear-gradient(90deg, var(--green) 0%, var(--yellow) 52%, var(--red) 100%);
+}
+
+@media (max-width: 500px) {
+  .companion-status { font-size: 11px; }
+  .gauge-block { gap: 4px; padding-right: 6px; padding-left: 6px; }
+  .gauge-block + .gauge-block { padding-left: 15px; }
+  .gauge-bar { width: 42px; }
+  [data-gauge-row="context"] .gauge-bar { width: 58px; }
+}

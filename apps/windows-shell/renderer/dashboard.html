@@ -1,0 +1,478 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Chaos Cat Familiar Dashboard</title>
+    <link rel="stylesheet" href="./brand-tokens.css" />
+    <style>
+      body {
+        background:
+          radial-gradient(circle at top left, rgba(249, 93, 2, 0.08), transparent 26%),
+          linear-gradient(180deg, var(--ccf-page), var(--ccf-page-warm));
+      }
+
+      .shell {
+        display: grid;
+        grid-template-columns: 284px minmax(0, 1fr);
+        min-height: 100vh;
+      }
+
+      .sidebar {
+        display: flex;
+        flex-direction: column;
+        gap: 24px;
+        padding: 24px 20px;
+        border-right: 1px solid var(--ccf-border);
+        background: rgba(255, 255, 255, 0.88);
+        backdrop-filter: blur(14px);
+      }
+
+      .brand {
+        display: flex;
+        align-items: center;
+        gap: 14px;
+      }
+
+      .logo {
+        width: 44px;
+        height: 44px;
+        border-radius: 14px;
+        object-fit: cover;
+        box-shadow: var(--ccf-shadow);
+      }
+
+      .brand-copy h1,
+      .view-header h2,
+      .summary-card strong,
+      .empty-state strong {
+        margin: 0;
+        font-family: var(--ccf-font-display);
+      }
+
+      .brand-copy h1 {
+        font-size: 28px;
+      }
+
+      .brand-copy p,
+      .muted,
+      .view-header p,
+      .nav-copy span,
+      .sidebar-footer p {
+        margin: 4px 0 0;
+        color: var(--ccf-text-faint);
+      }
+
+      nav {
+        display: grid;
+        gap: 10px;
+      }
+
+      .nav-button {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        min-height: 52px;
+        padding: 12px 14px;
+        text-align: left;
+        border: 1px solid transparent;
+        background: transparent;
+        color: var(--ccf-text);
+        border-radius: 16px;
+        cursor: pointer;
+      }
+
+      .nav-button.active {
+        background: linear-gradient(180deg, #fff4e8, #fff0df);
+        border-color: var(--ccf-border-strong);
+        color: var(--ccf-accent);
+      }
+
+      .nav-copy {
+        display: grid;
+        gap: 3px;
+      }
+
+      .nav-copy strong {
+        font-size: 14px;
+        font-weight: 600;
+      }
+
+      .nav-count {
+        min-width: 24px;
+        min-height: 24px;
+        padding: 0 8px;
+        border-radius: 999px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        background: var(--ccf-surface-muted);
+        color: var(--ccf-text-soft);
+        font-size: 12px;
+        font-weight: 600;
+      }
+
+      .nav-button.active .nav-count {
+        background: rgba(249, 93, 2, 0.14);
+        color: var(--ccf-accent);
+      }
+
+      .sidebar-actions {
+        display: grid;
+        gap: 10px;
+      }
+
+      .sidebar-footer {
+        margin-top: auto;
+        padding: 18px;
+        border-radius: 20px;
+        background: linear-gradient(180deg, #fff5eb, #fff);
+        border: 1px solid var(--ccf-border);
+        box-shadow: var(--ccf-shadow);
+      }
+
+      main {
+        display: grid;
+        align-content: start;
+        gap: 18px;
+        padding: 24px 26px 28px;
+      }
+
+      .summary {
+        display: grid;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        gap: 14px;
+      }
+
+      .summary-card {
+        padding: 18px;
+      }
+
+      .summary-card strong {
+        display: block;
+        font-size: 30px;
+        margin-top: 10px;
+      }
+
+      .view {
+        display: grid;
+        align-content: start;
+        gap: 18px;
+        padding: 20px;
+      }
+
+      .view-header {
+        display: flex;
+        justify-content: space-between;
+        gap: 16px;
+        align-items: flex-start;
+      }
+
+      .view-header h2 {
+        font-size: 32px;
+      }
+
+      .view-toolbar,
+      .controls,
+      .card-actions,
+      .split-actions,
+      .search-row {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
+        align-items: center;
+      }
+
+      .search-row {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) 180px auto;
+      }
+
+      .list,
+      .settings-grid,
+      .section-grid {
+        display: grid;
+        align-content: start;
+        gap: 12px;
+      }
+
+      .item {
+        padding: 16px;
+      }
+
+      .item.selected {
+        background: linear-gradient(180deg, #fff5eb, #fff0e2);
+        border-color: var(--ccf-border-strong);
+      }
+
+      .item-head {
+        display: flex;
+        justify-content: space-between;
+        gap: 12px;
+        align-items: flex-start;
+      }
+
+      .item-copy {
+        display: grid;
+        gap: 8px;
+      }
+
+      .item-meta {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        align-items: center;
+      }
+
+      .badge {
+        padding: 4px 10px;
+        border-radius: 999px;
+        background: var(--ccf-accent-soft);
+        color: var(--ccf-accent);
+        font-size: 12px;
+        font-weight: 600;
+      }
+
+      .badge.neutral {
+        background: var(--ccf-surface-muted);
+        color: var(--ccf-text-soft);
+      }
+
+      .badge.success {
+        background: rgba(31, 157, 103, 0.12);
+        color: var(--ccf-success);
+      }
+
+      .badge.warn {
+        background: rgba(209, 126, 0, 0.12);
+        color: var(--ccf-warning);
+      }
+
+      .badge.danger {
+        background: rgba(218, 59, 52, 0.12);
+        color: var(--ccf-danger);
+      }
+
+      .split {
+        display: grid;
+        align-items: start;
+        grid-template-columns: minmax(0, 1.3fr) minmax(320px, 0.9fr);
+        gap: 16px;
+      }
+
+      .settings-group {
+        padding: 18px;
+      }
+
+      .settings-group h3,
+      .section-panel h3 {
+        margin: 0;
+        font-family: var(--ccf-font-display);
+        font-size: 22px;
+      }
+
+      .setting-row {
+        display: flex;
+        justify-content: space-between;
+        gap: 14px;
+        align-items: center;
+        padding: 12px 0;
+        border-top: 1px solid var(--ccf-border);
+      }
+
+      .setting-row:first-of-type {
+        border-top: 0;
+        padding-top: 0;
+      }
+
+      .setting-copy {
+        display: grid;
+        gap: 4px;
+      }
+
+      .setting-value {
+        text-align: right;
+        color: var(--ccf-text-soft);
+        font-size: 13px;
+        max-width: 280px;
+      }
+
+      .section-panel {
+        padding: 20px;
+      }
+
+      .empty-state {
+        display: grid;
+        gap: 8px;
+        justify-items: start;
+        padding: 28px;
+        border-radius: 20px;
+        border: 1px dashed var(--ccf-border-strong);
+        background: linear-gradient(180deg, #fff8f1, rgba(255, 255, 255, 0.86));
+      }
+
+      .empty-state strong {
+        font-size: 24px;
+      }
+
+      .two-up,
+      .three-up {
+        display: grid;
+        gap: 14px;
+      }
+
+      .two-up {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+
+      .three-up {
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+      }
+
+      .mini-stat {
+        display: grid;
+        gap: 6px;
+        padding: 16px;
+        border-radius: 18px;
+        background: linear-gradient(180deg, #fff8f2, #fff);
+        border: 1px solid var(--ccf-border);
+      }
+
+      .mini-stat strong {
+        font-family: var(--ccf-font-display);
+        font-size: 24px;
+      }
+
+      .mascot-preview {
+        display: grid;
+        grid-template-columns: 88px minmax(0, 1fr);
+        gap: 14px;
+        align-items: center;
+      }
+
+      .mascot-avatar {
+        width: 88px;
+        height: 88px;
+        border-radius: 22px;
+        object-fit: cover;
+        background: linear-gradient(180deg, #fff4e5, #fff);
+        border: 1px solid var(--ccf-border);
+      }
+
+      .onboarding {
+        position: fixed;
+        inset: 0;
+        display: none;
+        align-items: center;
+        justify-content: center;
+        padding: 24px;
+        background: rgba(38, 22, 60, 0.18);
+        backdrop-filter: blur(14px);
+      }
+
+      .onboarding.visible {
+        display: flex;
+      }
+
+      .onboarding-card {
+        width: min(720px, 100%);
+        padding: 28px;
+      }
+
+      .onboarding-card h2 {
+        margin: 12px 0 0;
+        font-family: var(--ccf-font-display);
+        font-size: 34px;
+      }
+
+      .onboarding-card #onboardingBody {
+        margin-top: 12px;
+        max-width: 620px;
+        line-height: 1.22;
+      }
+
+      .onboarding-card #onboardingActions {
+        margin-top: 18px;
+      }
+
+      .step-dots {
+        display: flex;
+        gap: 8px;
+        margin-top: 18px;
+      }
+
+      .step-dots span {
+        width: 10px;
+        height: 10px;
+        border-radius: 999px;
+        background: rgba(93, 77, 114, 0.16);
+      }
+
+      .step-dots span.active {
+        background: var(--ccf-accent);
+      }
+
+      @media (max-width: 1120px) {
+        .shell,
+        .split,
+        .summary,
+        .two-up,
+        .three-up,
+        .search-row {
+          grid-template-columns: 1fr;
+        }
+
+        .sidebar {
+          border-right: 0;
+          border-bottom: 1px solid var(--ccf-border);
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="shell">
+      <aside class="sidebar">
+        <div class="brand">
+          <img class="logo" src="../assets/ccf-logo.svg" alt="Chaos Cat Familiar" />
+          <div class="brand-copy">
+            <h1>Chaos Cat Familiar</h1>
+            <p>Your Claude Code work companion.</p>
+          </div>
+        </div>
+        <nav id="nav"></nav>
+        <div class="sidebar-actions">
+          <button class="ccf-button" id="rerunOnboarding">Run Onboarding</button>
+          <button class="ccf-button" id="openDiagnostics">Open Diagnostics</button>
+        </div>
+        <div class="sidebar-footer">
+          <div class="ccf-chip accent">Claude Code companion</div>
+          <p>Windows keeps native launch, notification, and taskbar behavior, but the information architecture and visual language follow the SwiftUI app.</p>
+        </div>
+      </aside>
+      <main>
+        <section class="summary" id="summary"></section>
+        <section class="ccf-card view">
+          <header class="view-header">
+            <div>
+              <h2 id="viewTitle">Activity</h2>
+              <p id="viewSubtitle">Live shell state from the shared runtime snapshot.</p>
+            </div>
+            <div class="view-toolbar" id="viewToolbar"></div>
+          </header>
+          <div id="viewBody" class="list"></div>
+        </section>
+      </main>
+    </div>
+    <section class="onboarding" id="onboarding">
+      <article class="ccf-card onboarding-card">
+        <div class="muted" id="onboardingStepLabel">Step 1 of 7</div>
+        <h2 id="onboardingTitle">Welcome to Chaos Cat Familiar</h2>
+        <div class="muted" id="onboardingBody"></div>
+        <div class="controls" id="onboardingActions"></div>
+        <div class="step-dots" id="onboardingDots"></div>
+      </article>
+    </section>
+    <script type="module" src="./dashboard.js"></script>
+    <script type="module" src="./design-reload.js"></script>
+  </body>
+</html>

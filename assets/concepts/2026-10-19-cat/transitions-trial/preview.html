@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="en"><meta charset="utf-8"><title>Arcane Keeper — round trip</title>
+<link rel="stylesheet" href="../preview-timeline.css">
+<style>
+body{font:16px system-ui;background:#20212a;color:#f5f0ff;margin:28px;max-width:1080px}h1{font-size:25px}h2{font-size:17px}p{max-width:880px;line-height:1.5;color:#cdc6dd}.controls{display:flex;gap:10px;align-items:center;flex-wrap:wrap}button,select,input{font:inherit}button,select{padding:8px 12px}main{display:flex;gap:20px;flex-wrap:wrap;margin-top:18px}.card{border:1px solid #575062;border-radius:12px;padding:16px}.stage{width:320px;height:320px;display:grid;place-items:center;border-radius:8px;background:#11121a}.light{background:#eee9df;color:#24202a}canvas{width:300px;height:300px;image-rendering:pixelated}.small{width:120px;height:120px}.smallstage{display:flex;align-items:center;gap:15px;margin-top:12px;border-radius:8px;background:#11121a}.smallstage.light{background:#eee9df}.smallstage span{font-size:13px;max-width:160px}a{color:#d6a7ff}#status{font-variant-numeric:tabular-nums}
+</style>
+<h1>Arcane Keeper — idle ⇄ Working</h1>
+<p>Watch the full round trip, or isolate either transition. Pause and step to check the joins. Each atlas uses one fixed scale to match pedestal width; no per-frame resizing.</p>
+<div class="controls">
+ <select id="mode" aria-label="Sequence"><option value="demo">Full round trip</option><option value="forward">Idle → Working</option><option value="return">Working → idle</option></select>
+ <button id="toggle">Pause</button><button id="restart">Replay</button><button id="step">Next frame</button>
+ <label><input id="anchors" type="checkbox" checked> Align pedestal</label>
+ <label><input id="scale" type="checkbox" checked> Match atlas sizes</label>
+ <label>Speed <input id="speed" type="range" min="0.25" max="2" step="0.25" value="1"></label>
+</div>
+<main>
+ <section class="card"><h2>Dark desktop</h2><div class="stage"><canvas id="largeDark" width="512" height="512"></canvas></div><div class="smallstage"><canvas id="smallDark" class="small" width="512" height="512"></canvas><span>120 px high, within CCF's 136×120 area</span></div></section>
+ <section class="card"><h2>Light desktop</h2><div class="stage light"><canvas id="largeLight" width="512" height="512"></canvas></div><div class="smallstage light"><canvas id="smallLight" class="small" width="512" height="512"></canvas><span>Same frame and timing</span></div></section>
+</main>
+<section class="frame-timeline"><h2>Frame timeline</h2><p>Every playback step is shown in order, including repeated endpoint frames. Click to pause on a frame.</p><div id="frameTimeline"></div></section>
+<p id="status">Loading local atlases…</p>
+<p>Concept preview only; the running CCF is unchanged. Return sparks rise normally, rather than playing the forward clip backwards. Some silhouette variation remains between generated atlases.</p>
+<p><a href="idle-to-working.png">Idle → Working sheet</a> · <a href="working-to-idle.png">Working → idle sheet</a></p>
+<script src="../preview-timeline.js"></script>
+<script>
+const atlas = {
+ idle:{src:'../idle-trial/idle-sheet.png',scale:334/346,anchors:[[278,502],[258.5,502],[277,502],[278,498],[258.5,499],[277,498]]},
+ working:{src:'../working-trial/working-sheet-v2.png',scale:1,anchors:[[256.0, 486], [256.0, 486], [256.0, 486], [256.5, 486], [256.0, 486], [256.0, 486]]},
+ forward:{src:'idle-to-working.png',scale:334/348,anchors:[[278,501],[258.5,501],[277,501],[278,497],[258.5,497],[277,497]]},
+ return:{src:'working-to-idle.png',scale:334/360,anchors:[[278,503],[256.5,503],[265,503],[277,494],[256.5,494],[265,494]]}
+};
+const idle=[{state:'idle',frame:0,ms:2600},{state:'idle',frame:2,ms:110},{state:'idle',frame:3,ms:150},{state:'idle',frame:2,ms:110},{state:'idle',frame:0,ms:800}];
+const working=[0,1,2,3,4,5].map(frame=>({state:'working',frame,ms:125}));
+// Exact accepted endpoint cells bookend generated intermediates.
+const forward=[{state:'idle',frame:0,ms:120},...[1,2,3,4].map(frame=>({state:'forward',frame,ms:110})),{state:'working',frame:0,ms:125}];
+const settle=[{state:'working',frame:0,ms:125},...[1,2,3,4].map(frame=>({state:'return',frame,ms:130})),{state:'idle',frame:0,ms:160}];
+let frames=[],loopStart=0,index=0,ready=false,running=true,timer=null;
+const timeline=createFrameTimeline(document.getElementById('frameTimeline'),next=>{running=false;cancel();document.getElementById('toggle').textContent='Play';index=next;render();});
+function setSequence(){const mode=document.getElementById('mode').value;
+ if(mode==='demo'){frames=[...idle,...forward,...working,...working,...working,...working,...settle];loopStart=0;}
+ else if(mode==='forward'){frames=[...forward,...working];loopStart=forward.length;}
+ else{frames=[...settle,...idle];loopStart=settle.length;}
+ index=0;timeline.setFrames(frames.map(f=>({label:`${f.state} ${f.frame+1}`,detail:`${f.ms} ms`,...f})),draw);render();schedule();}
+function draw(canvas,f){const a=atlas[f.state],[x,y]=a.anchors[f.frame],align=document.getElementById('anchors').checked,scale=document.getElementById('scale').checked?a.scale:1,ctx=canvas.getContext('2d'),ratio=canvas.width/512;ctx.setTransform(ratio,0,0,ratio,0,0);ctx.clearRect(0,0,512,512);ctx.imageSmoothingEnabled=false;ctx.drawImage(a.image,f.frame%3*512,Math.floor(f.frame/3)*512,512,512,align?Math.round(256-x*scale):0,align?Math.round(488-y*scale):0,512*scale,512*scale);}
+function render(){if(!ready)return;const f=frames[index],align=document.getElementById('anchors').checked;for(const id of ['largeDark','largeLight','smallDark','smallLight'])draw(document.getElementById(id),f);timeline.setActive(index);document.getElementById('status').textContent=`${f.state} · atlas frame ${f.frame+1} · ${running?'playing':'paused'} · ${align?'anchored':'raw placement'}`;}
+function cancel(){clearTimeout(timer);timer=null;}
+function advance(){index=index+1<frames.length?index+1:loopStart;render();}
+function schedule(){cancel();if(!ready||!running||document.hidden)return;timer=setTimeout(()=>{advance();schedule();},frames[index].ms/Number(document.getElementById('speed').value));}
+document.getElementById('mode').onchange=setSequence;
+document.getElementById('restart').onclick=()=>{index=0;running=true;document.getElementById('toggle').textContent='Pause';render();schedule();};
+document.getElementById('toggle').onclick=()=>{running=!running;document.getElementById('toggle').textContent=running?'Pause':'Play';render();schedule();};
+document.getElementById('step').onclick=()=>{running=false;cancel();document.getElementById('toggle').textContent='Play';advance();};
+document.getElementById('anchors').onchange=()=>{timeline.redraw();render();};document.getElementById('scale').onchange=()=>{timeline.redraw();render();};document.getElementById('speed').oninput=schedule;
+document.addEventListener('visibilitychange',schedule);window.addEventListener('pagehide',cancel);
+Promise.all(Object.values(atlas).map(a=>new Promise((resolve,reject)=>{a.image=new Image();a.image.onload=()=>a.image.width===1536&&a.image.height===1024?resolve():reject(new Error('Unexpected atlas size'));a.image.onerror=()=>reject(new Error('Could not load '+a.src));a.image.src=a.src;}))).then(()=>{ready=true;setSequence();}).catch(error=>{document.getElementById('status').textContent=error.message;});
+</script></html>

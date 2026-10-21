@@ -1,0 +1,351 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Chaos Cat Familiar Preview</title>
+    <style>
+      :root {
+        --bg: #120d1e;
+        --panel: rgba(255, 255, 255, 0.08);
+        --panel-strong: rgba(255, 255, 255, 0.12);
+        --text: #f8f4ff;
+        --muted: rgba(248, 244, 255, 0.72);
+        --accent: #ff7b2c;
+        --border: rgba(255, 255, 255, 0.1);
+      }
+
+      body {
+        margin: 0;
+        font-family: "Segoe UI", sans-serif;
+        color: var(--text);
+        background:
+          radial-gradient(circle at top left, rgba(255, 123, 44, 0.2), transparent 24%),
+          radial-gradient(circle at bottom right, rgba(102, 78, 255, 0.18), transparent 28%),
+          linear-gradient(180deg, #191127 0%, var(--bg) 100%);
+      }
+
+      .titlebar {
+        height: 56px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 0 14px 0 18px;
+        background: rgba(17, 12, 28, 0.9);
+        border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+        backdrop-filter: blur(18px);
+        -webkit-app-region: drag;
+      }
+
+      .titlebar-label {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        font-size: 13px;
+        font-weight: 700;
+      }
+
+      .titlebar-dot {
+        width: 10px;
+        height: 10px;
+        border-radius: 999px;
+        background: var(--accent);
+        box-shadow: 0 0 0 4px rgba(255, 123, 44, 0.16);
+      }
+
+      .window-controls {
+        display: flex;
+        gap: 8px;
+        -webkit-app-region: no-drag;
+      }
+
+      .window-controls button {
+        width: 34px;
+        height: 34px;
+        padding: 0;
+        border-radius: 10px;
+      }
+
+      main {
+        max-width: 1180px;
+        margin: 0 auto;
+        padding: 28px;
+      }
+
+      .hero {
+        display: grid;
+        grid-template-columns: minmax(0, 1.2fr) minmax(320px, 0.8fr);
+        gap: 20px;
+      }
+
+      .card {
+        border-radius: 24px;
+        background: var(--panel);
+        border: 1px solid var(--border);
+        box-shadow: 0 20px 60px rgba(0, 0, 0, 0.32);
+        backdrop-filter: blur(18px);
+      }
+
+      .stage {
+        padding: 24px;
+      }
+
+      .eyebrow {
+        display: inline-flex;
+        padding: 6px 11px;
+        border-radius: 999px;
+        background: rgba(255, 123, 44, 0.16);
+        color: #ffc699;
+        font-size: 12px;
+        font-weight: 700;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+      }
+
+      h1 {
+        margin: 14px 0 8px;
+        font-size: 36px;
+      }
+
+      p {
+        margin: 0;
+        color: var(--muted);
+        line-height: 1.55;
+      }
+
+      .stage-shell {
+        position: relative;
+        margin-top: 22px;
+        min-height: 460px;
+        border-radius: 28px;
+        background:
+          radial-gradient(circle at 30% 20%, rgba(255,255,255,0.12), rgba(255,255,255,0.02) 38%, rgba(0,0,0,0.16) 100%),
+          linear-gradient(180deg, rgba(255,255,255,0.06), rgba(255,255,255,0.02));
+        overflow: hidden;
+      }
+
+      .stage-shell::after {
+        content: "";
+        position: absolute;
+        inset: 0;
+        border-radius: 28px;
+        border: 1px solid rgba(255,255,255,0.08);
+        pointer-events: none;
+      }
+
+      .preview-media,
+      .preview-fallback {
+        position: absolute;
+        inset: 0;
+        width: 100%;
+        height: 100%;
+        object-fit: contain;
+      }
+
+      .preview-fallback {
+        display: none;
+      }
+
+      .hud {
+        position: absolute;
+        left: 20px;
+        right: 20px;
+        bottom: 20px;
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 10px;
+      }
+
+      .pill {
+        padding: 12px 14px;
+        border-radius: 16px;
+        background: rgba(8, 10, 17, 0.5);
+        border: 1px solid rgba(255,255,255,0.08);
+      }
+
+      .label {
+        font-size: 11px;
+        color: var(--muted);
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+      }
+
+      .value {
+        margin-top: 6px;
+        font-size: 16px;
+        font-weight: 700;
+      }
+
+      .controls {
+        padding: 22px;
+      }
+
+      .grid {
+        display: grid;
+        gap: 12px;
+      }
+
+      .state-buttons {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 10px;
+        margin-top: 14px;
+      }
+
+      button,
+      select {
+        font: inherit;
+      }
+
+      button {
+        border: 0;
+        border-radius: 16px;
+        padding: 12px 14px;
+        cursor: pointer;
+      }
+
+      .state-button {
+        background: var(--panel-strong);
+        color: var(--text);
+        text-align: left;
+      }
+
+      .state-button.active {
+        background: linear-gradient(135deg, rgba(255, 123, 44, 0.9), rgba(255, 153, 84, 0.8));
+        color: #201108;
+      }
+
+      .toolbar {
+        display: flex;
+        gap: 10px;
+        flex-wrap: wrap;
+        margin-top: 14px;
+      }
+
+      .primary {
+        background: var(--accent);
+        color: white;
+      }
+
+      .secondary {
+        background: rgba(255,255,255,0.1);
+        color: var(--text);
+      }
+
+      .library-list {
+        display: grid;
+        gap: 10px;
+        margin-top: 14px;
+        max-height: 300px;
+        overflow: auto;
+      }
+
+      .library-item {
+        display: flex;
+        gap: 12px;
+        align-items: center;
+        padding: 10px;
+        border-radius: 16px;
+        background: rgba(255,255,255,0.06);
+        border: 1px solid transparent;
+        cursor: pointer;
+        transition: background 120ms ease, border-color 120ms ease, transform 120ms ease;
+      }
+
+      .library-item:hover {
+        background: rgba(255,255,255,0.1);
+        transform: translateY(-1px);
+      }
+
+      .library-item.active {
+        background: rgba(255, 123, 44, 0.16);
+        border-color: rgba(255, 123, 44, 0.5);
+      }
+
+      .library-item img {
+        width: 64px;
+        height: 64px;
+        object-fit: contain;
+        border-radius: 14px;
+        background: rgba(255,255,255,0.08);
+      }
+
+      .meta {
+        color: var(--muted);
+        font-size: 13px;
+      }
+
+      select {
+        width: 100%;
+        padding: 12px 14px;
+        border-radius: 14px;
+        border: 1px solid var(--border);
+        background: rgba(0, 0, 0, 0.18);
+        color: var(--text);
+      }
+    </style>
+  </head>
+  <body>
+    <div class="titlebar">
+      <div class="titlebar-label">
+        <span class="titlebar-dot"></span>
+        <span>Chaos Cat Familiar Preview</span>
+      </div>
+      <div class="window-controls">
+        <button class="secondary" id="windowMinimize" aria-label="Minimize window">-</button>
+        <button class="secondary" id="windowClose" aria-label="Close window">x</button>
+      </div>
+    </div>
+    <main>
+      <section class="hero">
+        <article class="card stage">
+          <div class="eyebrow">Windows Runtime Preview</div>
+          <h1 id="mascotName">Masko</h1>
+          <p id="mascotDescription">Simulates live Claude activity transitions using the same state machine and media runtime as the overlay.</p>
+          <div class="stage-shell">
+            <video class="preview-media" id="previewVideo" autoplay muted playsinline></video>
+            <img class="preview-fallback" id="previewFallback" alt="Mascot fallback" />
+            <div class="hud">
+              <div class="pill">
+                <div class="label">Simulated state</div>
+                <div class="value" id="currentScenario">Idle</div>
+              </div>
+              <div class="pill">
+                <div class="label">Current node</div>
+                <div class="value" id="currentNode">Idle</div>
+              </div>
+              <div class="pill">
+                <div class="label">Playback</div>
+                <div class="value" id="currentMedia">Waiting</div>
+              </div>
+            </div>
+          </div>
+        </article>
+
+        <article class="card controls">
+          <div class="grid">
+            <div>
+              <div class="label">Active mascot</div>
+              <select id="mascotSelect"></select>
+            </div>
+            <div>
+              <div class="label">Scenario</div>
+              <div class="state-buttons" id="scenarioButtons"></div>
+            </div>
+            <div class="toolbar">
+              <button class="primary" id="cycleButton">Auto cycle</button>
+              <button class="secondary" id="syncButton">Use selected mascot</button>
+              <button class="secondary" id="openManager">Open library</button>
+            </div>
+            <div class="meta" id="statusText">Preview ready.</div>
+            <div>
+              <div class="label">Installed mascots</div>
+              <div class="library-list" id="libraryList"></div>
+            </div>
+          </div>
+        </article>
+      </section>
+    </main>
+    <script type="module" src="./mascot-preview.js"></script>
+    <script type="module" src="./design-reload.js"></script>
+  </body>
+</html>

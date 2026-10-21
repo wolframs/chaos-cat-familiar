@@ -1,0 +1,273 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Chaos Cat Familiar Mascots</title>
+    <style>
+      :root {
+        --bg: #f6f1e8;
+        --ink: #23113c;
+        --muted: rgba(35, 17, 60, 0.68);
+        --card: rgba(255, 255, 255, 0.88);
+        --border: rgba(35, 17, 60, 0.12);
+        --accent: #f95d02;
+      }
+
+      body {
+        margin: 0;
+        font-family: "Segoe UI", sans-serif;
+        color: var(--ink);
+        background:
+          radial-gradient(circle at top left, rgba(249, 93, 2, 0.18), transparent 28%),
+          linear-gradient(180deg, #fffaf3 0%, var(--bg) 100%);
+      }
+
+      .titlebar {
+        height: 56px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 0 14px 0 18px;
+        background: rgba(255, 250, 243, 0.84);
+        border-bottom: 1px solid var(--border);
+        backdrop-filter: blur(18px);
+        -webkit-app-region: drag;
+      }
+
+      .titlebar-label {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        font-size: 13px;
+        font-weight: 700;
+      }
+
+      .titlebar-dot {
+        width: 10px;
+        height: 10px;
+        border-radius: 999px;
+        background: var(--accent);
+        box-shadow: 0 0 0 4px rgba(249, 93, 2, 0.16);
+      }
+
+      .window-controls {
+        display: flex;
+        gap: 8px;
+        -webkit-app-region: no-drag;
+      }
+
+      .window-controls button {
+        width: 34px;
+        height: 34px;
+        padding: 0;
+        border-radius: 10px;
+      }
+
+      main {
+        max-width: 1040px;
+        margin: 0 auto;
+        padding: 28px;
+      }
+
+      .hero {
+        display: grid;
+        grid-template-columns: 1.1fr 0.9fr;
+        gap: 20px;
+        align-items: center;
+      }
+
+      .card {
+        background: var(--card);
+        border: 1px solid var(--border);
+        border-radius: 22px;
+        box-shadow: 0 16px 50px rgba(35, 17, 60, 0.08);
+      }
+
+      .hero-card {
+        padding: 24px;
+      }
+
+      .hero-card h1 {
+        margin: 0;
+        font-size: 34px;
+      }
+
+      .hero-card p {
+        color: var(--muted);
+        line-height: 1.5;
+      }
+
+      .actions {
+        display: flex;
+        gap: 10px;
+        flex-wrap: wrap;
+      }
+
+      input, button {
+        font: inherit;
+      }
+
+      input {
+        width: 100%;
+        box-sizing: border-box;
+        padding: 12px 14px;
+        border-radius: 999px;
+        border: 1px solid var(--border);
+        background: white;
+      }
+
+      button {
+        border: 0;
+        border-radius: 999px;
+        padding: 11px 16px;
+        cursor: pointer;
+      }
+
+      .primary {
+        background: var(--accent);
+        color: white;
+      }
+
+      .secondary {
+        background: rgba(35, 17, 60, 0.08);
+        color: var(--ink);
+      }
+
+      .preview {
+        min-height: 320px;
+        padding: 24px;
+        display: grid;
+        place-items: center;
+      }
+
+      .preview img {
+        width: min(100%, 260px);
+        aspect-ratio: 1;
+        object-fit: contain;
+        filter: drop-shadow(0 16px 24px rgba(35, 17, 60, 0.14));
+      }
+
+      .section {
+        margin-top: 24px;
+      }
+
+      .section h2 {
+        margin: 0 0 12px;
+        font-size: 20px;
+      }
+
+      .library {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+        gap: 14px;
+      }
+
+      .mascot-card {
+        padding: 16px;
+      }
+
+      .mascot-card img {
+        width: 100%;
+        aspect-ratio: 1;
+        object-fit: contain;
+        border-radius: 16px;
+        background: radial-gradient(circle at 30% 20%, rgba(249, 93, 2, 0.18), rgba(255,255,255,0.4) 48%, rgba(35,17,60,0.04) 100%);
+      }
+
+      .eyebrow {
+        display: inline-flex;
+        margin-top: 12px;
+        padding: 5px 10px;
+        border-radius: 999px;
+        background: rgba(249, 93, 2, 0.12);
+        color: var(--accent);
+        font-size: 12px;
+        font-weight: 600;
+      }
+
+      .meta {
+        color: var(--muted);
+        font-size: 13px;
+        line-height: 1.45;
+      }
+
+      .featured {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+        gap: 10px;
+        margin-top: 12px;
+      }
+
+      .chip {
+        padding: 12px;
+        border-radius: 16px;
+        border: 1px solid var(--border);
+        background: rgba(255, 255, 255, 0.72);
+        color: var(--ink);
+        text-align: left;
+      }
+
+      .toolbar {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) 200px;
+        gap: 10px;
+        margin-top: 20px;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="titlebar">
+      <div class="titlebar-label">
+        <span class="titlebar-dot"></span>
+        <span>Chaos Cat Familiar Mascots</span>
+      </div>
+      <div class="window-controls">
+        <button class="secondary" id="windowMinimize" aria-label="Minimize window">-</button>
+        <button class="secondary" id="windowClose" aria-label="Close window">x</button>
+      </div>
+    </div>
+    <main>
+      <section class="hero">
+        <article class="card hero-card">
+          <div class="eyebrow">Mascot library</div>
+          <h1>Pick a mascot that feels alive.</h1>
+          <p>Use the bundled mascot immediately, or install another one from a masko.ai slug. The overlay updates live as soon as you switch.</p>
+          <label for="mascotSlug">Install from slug</label>
+          <input id="mascotSlug" type="text" placeholder="masko" />
+          <div class="meta" style="margin-top:10px;">Quick starts</div>
+          <div class="featured" id="featuredMascots"></div>
+          <div class="actions" style="margin-top:12px;">
+            <button class="primary" id="installMascot">Install mascot</button>
+            <button class="secondary" id="openPreview">Preview in action</button>
+            <button class="secondary" id="openDiagnostics">Open diagnostics</button>
+          </div>
+          <div id="mascotStatus" class="meta" style="margin-top:12px;"></div>
+        </article>
+        <article class="card preview">
+          <div>
+            <img id="currentMascotImage" alt="Selected mascot" />
+            <div style="text-align:center;margin-top:12px;">
+              <strong id="currentMascotName">Masko</strong>
+              <div class="meta" id="currentMascotMeta">Bundled default mascot</div>
+            </div>
+          </div>
+        </article>
+      </section>
+
+      <section class="section">
+        <h2>Installed mascots</h2>
+        <div class="toolbar">
+          <input id="librarySearch" type="text" placeholder="Search installed mascots" />
+          <select id="libraryFilter">
+            <option value="all">All sources</option>
+            <option value="bundled">Bundled</option>
+            <option value="remote">Installed from masko.ai</option>
+          </select>
+        </div>
+        <div class="library" id="mascotLibrary"></div>
+      </section>
+    </main>
+    <script type="module" src="./mascots.js"></script>
+    <script type="module" src="./design-reload.js"></script>
+  </body>
+</html>

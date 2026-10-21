@@ -1,0 +1,278 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Chaos Cat Familiar Diagnostics</title>
+    <style>
+      body {
+        margin: 0;
+        font-family: "Segoe UI", sans-serif;
+        background: #12161d;
+        color: #f4f1ea;
+      }
+
+      .titlebar {
+        height: 52px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 0 12px 0 16px;
+        background: rgba(13, 17, 23, 0.92);
+        border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+        -webkit-app-region: drag;
+      }
+
+      .titlebar-label {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        font-size: 13px;
+        font-weight: 700;
+        letter-spacing: 0.02em;
+      }
+
+      .titlebar-dot {
+        width: 10px;
+        height: 10px;
+        border-radius: 999px;
+        background: #f95d02;
+        box-shadow: 0 0 0 4px rgba(249, 93, 2, 0.16);
+      }
+
+      .window-controls {
+        display: flex;
+        gap: 8px;
+        -webkit-app-region: no-drag;
+      }
+
+      .window-controls button {
+        width: 34px;
+        height: 34px;
+        padding: 0;
+        border-radius: 10px;
+        background: rgba(255, 255, 255, 0.08);
+        color: #f4f1ea;
+      }
+
+      header {
+        padding: 20px;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+      }
+
+      main {
+        padding: 20px;
+        display: grid;
+        gap: 16px;
+      }
+
+      .card {
+        background: rgba(255, 255, 255, 0.06);
+        border-radius: 14px;
+        padding: 16px;
+      }
+
+      .actions {
+        display: flex;
+        gap: 8px;
+        flex-wrap: wrap;
+      }
+
+      label {
+        display: block;
+        margin-bottom: 6px;
+        font-size: 13px;
+      }
+
+      input, select, button {
+        font: inherit;
+      }
+
+      input, select {
+        width: 100%;
+        padding: 8px 10px;
+        border-radius: 10px;
+        border: 1px solid rgba(255, 255, 255, 0.12);
+        background: rgba(0, 0, 0, 0.2);
+        color: #f4f1ea;
+      }
+
+      button {
+        padding: 8px 12px;
+        border-radius: 999px;
+        border: 0;
+        cursor: pointer;
+      }
+
+      .primary {
+        background: #f95d02;
+        color: white;
+      }
+
+      .secondary {
+        background: rgba(255, 255, 255, 0.12);
+        color: #f4f1ea;
+      }
+
+      pre {
+        white-space: pre-wrap;
+        word-break: break-word;
+        background: rgba(255, 255, 255, 0.06);
+        padding: 16px;
+        border-radius: 12px;
+        margin: 0;
+        font-family: Consolas, "Cascadia Code", monospace;
+        font-size: 12px;
+      }
+
+      ul {
+        margin: 0;
+        padding-left: 18px;
+      }
+
+      .mascot-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+        gap: 12px;
+      }
+
+      .mascot-card {
+        padding: 12px;
+        border-radius: 12px;
+        background: rgba(255, 255, 255, 0.05);
+        border: 1px solid rgba(255, 255, 255, 0.08);
+      }
+
+      .mascot-card img {
+        width: 100%;
+        aspect-ratio: 1;
+        object-fit: contain;
+        border-radius: 10px;
+        background: radial-gradient(circle at 30% 20%, rgba(255,255,255,0.18), rgba(255,255,255,0.04) 55%, rgba(0,0,0,0.16) 100%);
+      }
+
+      .mascot-meta {
+        margin-top: 8px;
+        font-size: 13px;
+        color: rgba(244, 241, 234, 0.8);
+      }
+    </style>
+  </head>
+  <body>
+    <div class="titlebar">
+      <div class="titlebar-label">
+        <span class="titlebar-dot"></span>
+        <span>Chaos Cat Familiar Diagnostics</span>
+      </div>
+      <div class="window-controls">
+        <button id="windowMinimize" aria-label="Minimize window">-</button>
+        <button id="windowClose" aria-label="Close window">x</button>
+      </div>
+    </div>
+    <header>
+      <h1>Diagnostics</h1>
+      <p>Hook status, environment detection, recent runtime state, and repair actions.</p>
+    </header>
+    <main>
+      <section class="card">
+        <h2>Settings</h2>
+        <label for="port">Hook server port</label>
+        <input id="port" type="number" min="1024" max="65535" />
+        <label for="editorPreference" style="margin-top: 12px;">Preferred editor</label>
+        <select id="editorPreference">
+          <option value="vscode">VS Code</option>
+          <option value="cursor">Cursor</option>
+        </select>
+        <label for="appShellMode" style="margin-top: 12px;">App shell mode</label>
+        <select id="appShellMode">
+          <option value="developer">Developer overlay</option>
+          <option value="mascot">Floating mascot</option>
+        </select>
+        <label for="openAtLogin" style="margin-top: 12px;">Startup at login</label>
+        <select id="openAtLogin">
+          <option value="false">Disabled</option>
+          <option value="true">Enabled</option>
+        </select>
+        <label for="showOverlayOnStartup" style="margin-top: 12px;">Show overlay on startup</label>
+        <select id="showOverlayOnStartup">
+          <option value="true">Show overlay</option>
+          <option value="false">Start in tray only</option>
+        </select>
+        <label for="overlayDisplayMode" style="margin-top: 12px;">Overlay monitor placement</label>
+        <select id="overlayDisplayMode">
+          <option value="remember">Remember last monitor</option>
+          <option value="cursor">Follow mouse monitor</option>
+          <option value="primary">Always use primary monitor</option>
+        </select>
+        <label for="notificationsEnabled" style="margin-top: 12px;">Notifications</label>
+        <select id="notificationsEnabled">
+          <option value="true">Enabled</option>
+          <option value="false">Disabled</option>
+        </select>
+        <label for="notificationPriority" style="margin-top: 12px;">Minimum notification priority</label>
+        <select id="notificationPriority">
+          <option value="urgent">Urgent only</option>
+          <option value="high">High and urgent</option>
+          <option value="normal">Normal and above</option>
+          <option value="low">All notifications</option>
+        </select>
+        <label for="toggleOverlayHotkey" style="margin-top: 12px;">Toggle overlay hotkey</label>
+        <input id="toggleOverlayHotkey" type="text" />
+        <label for="openDiagnosticsHotkey" style="margin-top: 12px;">Diagnostics hotkey</label>
+        <input id="openDiagnosticsHotkey" type="text" />
+        <label for="approveTopHotkey" style="margin-top: 12px;">Approve top request</label>
+        <input id="approveTopHotkey" type="text" />
+        <label for="denyTopHotkey" style="margin-top: 12px;">Deny top request</label>
+        <input id="denyTopHotkey" type="text" />
+        <label for="deferTopHotkey" style="margin-top: 12px;">Defer top request</label>
+        <input id="deferTopHotkey" type="text" />
+        <div class="actions" style="margin-top: 12px;">
+          <button class="primary" id="saveSettings">Save settings</button>
+          <button class="secondary" id="diagnose">Refresh diagnostics</button>
+          <button class="secondary" id="installHooks">Install hooks</button>
+          <button class="secondary" id="repairHooks">Repair hooks</button>
+        </div>
+      </section>
+      <section class="card">
+        <h2>Desktop integration</h2>
+        <div id="desktopIntegration"></div>
+      </section>
+      <section class="card">
+        <h2>Mascot library</h2>
+        <p style="margin-top:0;color:rgba(244,241,234,0.78);">Pick the mascot shown in the overlay, or install another one from a masko.ai slug.</p>
+        <label for="mascotSlug">Install mascot by slug</label>
+        <input id="mascotSlug" type="text" placeholder="masko" />
+        <div class="actions" style="margin-top: 12px;">
+          <button class="primary" id="installMascot">Install mascot</button>
+        </div>
+        <div id="mascotStatus" style="margin-top:12px;color:rgba(244,241,234,0.78);"></div>
+        <div class="mascot-grid" id="mascotLibrary" style="margin-top:14px;"></div>
+      </section>
+      <section class="card">
+        <h2>Support tiers</h2>
+        <div id="supportTiers"></div>
+      </section>
+      <section class="card">
+        <h2>Hook health</h2>
+        <div id="hookHealth"></div>
+      </section>
+      <section class="card">
+        <h2>Running windows</h2>
+        <div id="runningWindows"></div>
+      </section>
+      <section class="card">
+        <h2>Activation attempts</h2>
+        <div id="activationAttempts"></div>
+      </section>
+      <section class="card">
+        <h2>Recent logs</h2>
+        <pre id="logs">Loading...</pre>
+      </section>
+      <section class="card">
+        <h2>Diagnostics JSON</h2>
+        <pre id="state">Loading...</pre>
+      </section>
+    </main>
+    <script type="module" src="./diagnostics.js"></script>
+    <script type="module" src="./design-reload.js"></script>
+  </body>
+</html>

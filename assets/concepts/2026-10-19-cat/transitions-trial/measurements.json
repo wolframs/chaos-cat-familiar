@@ -1,0 +1,102 @@
+{
+  "idle-to-working.png": [
+    {
+      "anchor": [
+        278.0,
+        501
+      ],
+      "width": 347,
+      "cornerAlpha": 0
+    },
+    {
+      "anchor": [
+        258.5,
+        501
+      ],
+      "width": 348,
+      "cornerAlpha": 0
+    },
+    {
+      "anchor": [
+        277.0,
+        501
+      ],
+      "width": 349,
+      "cornerAlpha": 0
+    },
+    {
+      "anchor": [
+        278.0,
+        497
+      ],
+      "width": 347,
+      "cornerAlpha": 0
+    },
+    {
+      "anchor": [
+        258.5,
+        497
+      ],
+      "width": 348,
+      "cornerAlpha": 0
+    },
+    {
+      "anchor": [
+        277.0,
+        497
+      ],
+      "width": 349,
+      "cornerAlpha": 0
+    }
+  ],
+  "working-to-idle.png": [
+    {
+      "anchor": [
+        278.0,
+        503
+      ],
+      "width": 359,
+      "cornerAlpha": 0
+    },
+    {
+      "anchor": [
+        256.5,
+        503
+      ],
+      "width": 360,
+      "cornerAlpha": 0
+    },
+    {
+      "anchor": [
+        265.0,
+        503
+      ],
+      "width": 359,
+      "cornerAlpha": 0
+    },
+    {
+      "anchor": [
+        277.0,
+        494
+      ],
+      "width": 359,
+      "cornerAlpha": 0
+    },
+    {
+      "anchor": [
+        256.5,
+        494
+      ],
+      "width": 360,
+      "cornerAlpha": 0
+    },
+    {
+      "anchor": [
+        265.0,
+        494
+      ],
+      "width": 359,
+      "cornerAlpha": 0
+    }
+  ]
+}

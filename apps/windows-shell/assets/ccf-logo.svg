@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256">
+  <!-- Placeholder mark for Chaos Cat Familiar until the black-cat art exists. -->
+  <rect width="256" height="256" rx="64" fill="#1b1622" />
+  <rect x="18" y="18" width="220" height="220" rx="56" fill="none" stroke="#3a3146" stroke-width="4" />
+  <text x="128" y="152" text-anchor="middle" font-family="Fredoka, Segoe UI, sans-serif" font-size="76" font-weight="700" fill="#f4f1ea" letter-spacing="2">CCF</text>
+</svg>

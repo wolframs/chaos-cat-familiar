@@ -1,0 +1,370 @@
+{
+  "version": "2.0",
+  "name": "Cupidon",
+  "canvasName": "Claude Code 4-State",
+  "initialNode": "71cc0e85-eb1c-46d5-850a-6bc17a150d1f",
+  "autoPlay": true,
+  "nodes": [
+    {
+      "id": "71cc0e85-eb1c-46d5-850a-6bc17a150d1f",
+      "name": "Idle",
+      "transparentThumbnailUrl": "https://assets.masko.ai/07d95e/cupidon-2724/idle-fb36b91b.png"
+    },
+    {
+      "id": "1558429f-af14-4af3-9f4b-d06fa9ad9882",
+      "name": "Working",
+      "transparentThumbnailUrl": "https://assets.masko.ai/07d95e/cupidon-2724/working-c0b05494.png"
+    },
+    {
+      "id": "637ca835-920a-45de-ad29-9034bc2f6bfd",
+      "name": "Needs Attention",
+      "transparentThumbnailUrl": "https://assets.masko.ai/07d95e/cupidon-2724/needs-attention-6886d167.png"
+    },
+    {
+      "id": "d6860f41-6420-466d-b791-94d3d1d8c4b7",
+      "name": "Thinking",
+      "transparentThumbnailUrl": "https://assets.masko.ai/07d95e/cupidon-2724/thinking-0715256c.png"
+    }
+  ],
+  "edges": [
+    {
+      "id": "ba25187d-ea8f-46f0-851c-3340980e5863",
+      "source": "71cc0e85-eb1c-46d5-850a-6bc17a150d1f",
+      "target": "71cc0e85-eb1c-46d5-850a-6bc17a150d1f",
+      "isLoop": true,
+      "duration": 3,
+      "conditions": [],
+      "videos": {
+        "webm": "https://assets.masko.ai/07d95e/cupidon-2724/idle-175da20f.webm",
+        "hevc": "https://assets.masko.ai/07d95e/cupidon-2724/idle-858bfc54.mov"
+      }
+    },
+    {
+      "id": "e0c025fb-8568-4fc2-9266-151fbc139b36",
+      "source": "1558429f-af14-4af3-9f4b-d06fa9ad9882",
+      "target": "1558429f-af14-4af3-9f4b-d06fa9ad9882",
+      "isLoop": true,
+      "duration": 3,
+      "conditions": [],
+      "videos": {
+        "webm": "https://assets.masko.ai/07d95e/cupidon-2724/working-97d867d2.webm",
+        "hevc": "https://assets.masko.ai/07d95e/cupidon-2724/working-953a3c52.mov"
+      }
+    },
+    {
+      "id": "4c2158a9-c67f-4ea6-818a-1fec64cc7e5e",
+      "source": "637ca835-920a-45de-ad29-9034bc2f6bfd",
+      "target": "637ca835-920a-45de-ad29-9034bc2f6bfd",
+      "isLoop": true,
+      "duration": 3,
+      "conditions": [],
+      "videos": {
+        "webm": "https://assets.masko.ai/07d95e/cupidon-2724/needs-attention-168bb4fc.webm",
+        "hevc": "https://assets.masko.ai/07d95e/cupidon-2724/needs-attention-c851bdb1.mov"
+      }
+    },
+    {
+      "id": "13c608e5-5759-495e-977b-3e10bb391c4f",
+      "source": "d6860f41-6420-466d-b791-94d3d1d8c4b7",
+      "target": "d6860f41-6420-466d-b791-94d3d1d8c4b7",
+      "isLoop": true,
+      "duration": 5,
+      "conditions": [],
+      "videos": {
+        "webm": "https://assets.masko.ai/07d95e/cupidon-2724/thinking-5967b31b.webm",
+        "hevc": "https://assets.masko.ai/07d95e/cupidon-2724/thinking-60a77321.mov"
+      }
+    },
+    {
+      "id": "1b51225f-cb9e-4595-8d31-4b3985fed90f",
+      "source": "71cc0e85-eb1c-46d5-850a-6bc17a150d1f",
+      "target": "1558429f-af14-4af3-9f4b-d06fa9ad9882",
+      "isLoop": false,
+      "duration": 4,
+      "conditions": [
+        {
+          "op": "==",
+          "input": "claudeCode::isWorking",
+          "value": true
+        },
+        {
+          "op": "==",
+          "input": "claudeCode::isAlert",
+          "value": false
+        },
+        {
+          "op": "==",
+          "input": "claudeCode::isCompacting",
+          "value": false
+        }
+      ],
+      "videos": {
+        "webm": "https://assets.masko.ai/07d95e/cupidon-2724/idle-working-62e647bb.webm",
+        "hevc": "https://assets.masko.ai/07d95e/cupidon-2724/idle-working-fa96b1bd.mov"
+      }
+    },
+    {
+      "id": "ced57cd5-513d-43e5-a971-0aede2f75e82",
+      "source": "71cc0e85-eb1c-46d5-850a-6bc17a150d1f",
+      "target": "637ca835-920a-45de-ad29-9034bc2f6bfd",
+      "isLoop": false,
+      "duration": 4,
+      "conditions": [
+        {
+          "op": "==",
+          "input": "claudeCode::isAlert",
+          "value": true
+        }
+      ],
+      "videos": {
+        "webm": "https://assets.masko.ai/07d95e/cupidon-2724/idle-needs-attention-72fe83c6.webm",
+        "hevc": "https://assets.masko.ai/07d95e/cupidon-2724/idle-needs-attention-c890d002.mov"
+      }
+    },
+    {
+      "id": "ed11ffcd-9628-459b-b64f-b454d2798384",
+      "source": "71cc0e85-eb1c-46d5-850a-6bc17a150d1f",
+      "target": "d6860f41-6420-466d-b791-94d3d1d8c4b7",
+      "isLoop": false,
+      "duration": 4,
+      "conditions": [
+        {
+          "op": "==",
+          "input": "claudeCode::isCompacting",
+          "value": true
+        },
+        {
+          "op": "==",
+          "input": "claudeCode::isAlert",
+          "value": false
+        }
+      ],
+      "videos": {
+        "webm": "https://assets.masko.ai/07d95e/cupidon-2724/idle-thinking-d9d7e93b.webm",
+        "hevc": "https://assets.masko.ai/07d95e/cupidon-2724/idle-thinking-3da7399c.mov"
+      }
+    },
+    {
+      "id": "48c96992-b352-440c-8911-d4260c00712c",
+      "source": "1558429f-af14-4af3-9f4b-d06fa9ad9882",
+      "target": "71cc0e85-eb1c-46d5-850a-6bc17a150d1f",
+      "isLoop": false,
+      "duration": 4,
+      "conditions": [
+        {
+          "op": "==",
+          "input": "claudeCode::isIdle",
+          "value": true
+        },
+        {
+          "op": "==",
+          "input": "claudeCode::isAlert",
+          "value": false
+        },
+        {
+          "op": "==",
+          "input": "claudeCode::isCompacting",
+          "value": false
+        }
+      ],
+      "videos": {
+        "webm": "https://assets.masko.ai/07d95e/cupidon-2724/working-idle-27e55709.webm",
+        "hevc": "https://assets.masko.ai/07d95e/cupidon-2724/working-idle-65c61d6f.mov"
+      }
+    },
+    {
+      "id": "c8e85c89-ca1b-4b51-aa66-276389bab020",
+      "source": "1558429f-af14-4af3-9f4b-d06fa9ad9882",
+      "target": "637ca835-920a-45de-ad29-9034bc2f6bfd",
+      "isLoop": false,
+      "duration": 4,
+      "conditions": [
+        {
+          "op": "==",
+          "input": "claudeCode::isAlert",
+          "value": true
+        }
+      ],
+      "videos": {
+        "webm": "https://assets.masko.ai/07d95e/cupidon-2724/working-needs-attention-f4434091.webm",
+        "hevc": "https://assets.masko.ai/07d95e/cupidon-2724/working-needs-attention-76616034.mov"
+      }
+    },
+    {
+      "id": "fb889b5c-c609-4e00-b44a-7092d23dfd81",
+      "source": "637ca835-920a-45de-ad29-9034bc2f6bfd",
+      "target": "71cc0e85-eb1c-46d5-850a-6bc17a150d1f",
+      "isLoop": false,
+      "duration": 4,
+      "conditions": [
+        {
+          "op": "==",
+          "input": "claudeCode::isIdle",
+          "value": true
+        },
+        {
+          "op": "==",
+          "input": "claudeCode::isAlert",
+          "value": false
+        },
+        {
+          "op": "==",
+          "input": "claudeCode::isCompacting",
+          "value": false
+        }
+      ],
+      "videos": {
+        "webm": "https://assets.masko.ai/07d95e/cupidon-2724/needs-attention-idle-ea4e7274.webm",
+        "hevc": "https://assets.masko.ai/07d95e/cupidon-2724/needs-attention-idle-967ace42.mov"
+      }
+    },
+    {
+      "id": "78a7738e-1323-4de9-9158-e773895e99b9",
+      "source": "637ca835-920a-45de-ad29-9034bc2f6bfd",
+      "target": "1558429f-af14-4af3-9f4b-d06fa9ad9882",
+      "isLoop": false,
+      "duration": 4,
+      "conditions": [
+        {
+          "op": "==",
+          "input": "claudeCode::isWorking",
+          "value": true
+        },
+        {
+          "op": "==",
+          "input": "claudeCode::isAlert",
+          "value": false
+        },
+        {
+          "op": "==",
+          "input": "claudeCode::isCompacting",
+          "value": false
+        }
+      ],
+      "videos": {
+        "webm": "https://assets.masko.ai/07d95e/cupidon-2724/needs-attention-working-df35a2c8.webm",
+        "hevc": "https://assets.masko.ai/07d95e/cupidon-2724/needs-attention-working-a9ceb03b.mov"
+      }
+    },
+    {
+      "id": "8a93c679-439b-44ec-8fe2-01a4f3fa15d2",
+      "source": "637ca835-920a-45de-ad29-9034bc2f6bfd",
+      "target": "d6860f41-6420-466d-b791-94d3d1d8c4b7",
+      "isLoop": false,
+      "duration": 4,
+      "conditions": [
+        {
+          "op": "==",
+          "input": "claudeCode::isCompacting",
+          "value": true
+        },
+        {
+          "op": "==",
+          "input": "claudeCode::isAlert",
+          "value": false
+        }
+      ],
+      "videos": {
+        "webm": "https://assets.masko.ai/07d95e/cupidon-2724/needs-attention-thinking-59cf01a1.webm",
+        "hevc": "https://assets.masko.ai/07d95e/cupidon-2724/needs-attention-thinking-c6238327.mov"
+      }
+    },
+    {
+      "id": "38d57aa6-0842-4e19-99fe-f3c2bca9e2cf",
+      "source": "1558429f-af14-4af3-9f4b-d06fa9ad9882",
+      "target": "d6860f41-6420-466d-b791-94d3d1d8c4b7",
+      "isLoop": false,
+      "duration": 4,
+      "conditions": [
+        {
+          "op": "==",
+          "input": "claudeCode::isCompacting",
+          "value": true
+        },
+        {
+          "op": "==",
+          "input": "claudeCode::isAlert",
+          "value": false
+        }
+      ],
+      "videos": {
+        "webm": "https://assets.masko.ai/07d95e/cupidon-2724/working-thinking-cdf4a4a1.webm",
+        "hevc": "https://assets.masko.ai/07d95e/cupidon-2724/working-thinking-0c5c74de.mov"
+      }
+    },
+    {
+      "id": "857c1930-d901-405e-ab6a-bb2ef59450ac",
+      "source": "d6860f41-6420-466d-b791-94d3d1d8c4b7",
+      "target": "71cc0e85-eb1c-46d5-850a-6bc17a150d1f",
+      "isLoop": false,
+      "duration": 4,
+      "conditions": [
+        {
+          "op": "==",
+          "input": "claudeCode::isIdle",
+          "value": true
+        },
+        {
+          "op": "==",
+          "input": "claudeCode::isAlert",
+          "value": false
+        },
+        {
+          "op": "==",
+          "input": "claudeCode::isCompacting",
+          "value": false
+        }
+      ],
+      "videos": {
+        "webm": "https://assets.masko.ai/07d95e/cupidon-2724/thinking-idle-27914d7d.webm",
+        "hevc": "https://assets.masko.ai/07d95e/cupidon-2724/thinking-idle-e95d3590.mov"
+      }
+    },
+    {
+      "id": "db792f0b-3a20-474f-bdf0-c3fc0512081e",
+      "source": "d6860f41-6420-466d-b791-94d3d1d8c4b7",
+      "target": "1558429f-af14-4af3-9f4b-d06fa9ad9882",
+      "isLoop": false,
+      "duration": 4,
+      "conditions": [
+        {
+          "op": "==",
+          "input": "claudeCode::isWorking",
+          "value": true
+        },
+        {
+          "op": "==",
+          "input": "claudeCode::isAlert",
+          "value": false
+        },
+        {
+          "op": "==",
+          "input": "claudeCode::isCompacting",
+          "value": false
+        }
+      ],
+      "videos": {
+        "webm": "https://assets.masko.ai/07d95e/cupidon-2724/thinking-working-d1247e52.webm",
+        "hevc": "https://assets.masko.ai/07d95e/cupidon-2724/thinking-working-91e8b1c0.mov"
+      }
+    },
+    {
+      "id": "a6de8954-b52b-4cd0-bacb-4fc49ec122c1",
+      "source": "d6860f41-6420-466d-b791-94d3d1d8c4b7",
+      "target": "637ca835-920a-45de-ad29-9034bc2f6bfd",
+      "isLoop": false,
+      "duration": 4,
+      "conditions": [
+        {
+          "op": "==",
+          "input": "claudeCode::isAlert",
+          "value": true
+        }
+      ],
+      "videos": {
+        "webm": "https://assets.masko.ai/07d95e/cupidon-2724/thinking-needs-attention-541c4d69.webm",
+        "hevc": "https://assets.masko.ai/07d95e/cupidon-2724/thinking-needs-attention-54b147c5.mov"
+      }
+    }
+  ]
+}

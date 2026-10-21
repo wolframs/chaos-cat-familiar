@@ -1,0 +1,31 @@
+{
+  "name": "chaos-cat-familiar",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
+  "scripts": {
+    "test": "node --test packages/core/test/*.test.js apps/windows-shell/test/*.test.js scripts/windows/*.test.mjs",
+    "test:core": "node --test packages/core/test/*.test.js",
+    "test:windows-shell": "node --test apps/windows-shell/test/*.test.js",
+    "dev:install:windows": "powershell -ExecutionPolicy Bypass -File ./scripts/windows/dev-install.ps1",
+    "dev:uninstall:windows": "powershell -ExecutionPolicy Bypass -File ./scripts/windows/dev-uninstall.ps1",
+    "assets:windows": "powershell -ExecutionPolicy Bypass -File ./scripts/windows/export-windows-assets.ps1",
+    "assets:windows:pixel": "python ./scripts/windows/generate-pixel-icon.py",
+    "assets:windows:all": "powershell -ExecutionPolicy Bypass -File ./scripts/windows/export-windows-assets.ps1 -IncludePixelArtFallback",
+    "packaging:windows:prepare-app": "powershell -ExecutionPolicy Bypass -File ./scripts/windows/package-electron-app.ps1",
+    "packaging:windows:manifest": "node ./scripts/windows/render-msix-manifest.mjs",
+    "packaging:windows:stage-msix": "powershell -ExecutionPolicy Bypass -File ./scripts/windows/build-dev-msix.ps1",
+    "packaging:windows:install-msix": "powershell -ExecutionPolicy Bypass -File ./scripts/windows/install-dev-msix.ps1",
+    "packaging:windows:uninstall-msix": "powershell -ExecutionPolicy Bypass -File ./scripts/windows/uninstall-dev-msix.ps1",
+    "packaging:windows:validate-msix": "powershell -ExecutionPolicy Bypass -File ./scripts/windows/validate-dev-msix-install.ps1",
+    "packaging:windows:loop-msix": "powershell -ExecutionPolicy Bypass -File ./scripts/windows/run-dev-msix-loop.ps1",
+    "start:windows-shell": "npm --workspace @chaos-cat-familiar/windows-shell run start",
+    "start:windows-shell:developer": "powershell -NoProfile -Command \"$env:CCF_APP_MODE_OVERRIDE='developer'; npm --workspace @chaos-cat-familiar/windows-shell run start\"",
+    "start:windows-shell:user": "powershell -NoProfile -Command \"$env:CCF_APP_MODE_OVERRIDE='mascot'; npm --workspace @chaos-cat-familiar/windows-shell run start\"",
+    "smoke:windows-shell": "node ./scripts/windows/windows-shell-smoke.mjs"
+  }
+}

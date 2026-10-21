@@ -1,0 +1,12 @@
+{
+  "sourceSet": "generated",
+  "description": "MSIX visual assets generated from the canonical macOS app-icon.png export path.",
+  "assets": {
+    "square44x44Logo": "assets/generated/Square44x44Logo.png",
+    "square150x150Logo": "assets/generated/Square150x150Logo.png",
+    "square310x310Logo": "assets/generated/Square310x310Logo.png",
+    "wide310x150Logo": "assets/generated/Wide310x150Logo.png",
+    "storeLogo": "assets/generated/StoreLogo.png"
+  },
+  "fallbackExecutableIcon": "assets/pixel-art/ChaosCatFamiliar.ico"
+}

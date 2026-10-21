@@ -1,0 +1,43 @@
+@font-face { font-family: Rubik; src: url("../assets/fonts/Rubik-Regular.ttf"); font-weight: 400; }
+@font-face { font-family: Rubik; src: url("../assets/fonts/Rubik-SemiBold.ttf"); font-weight: 600; }
+* { box-sizing: border-box; scrollbar-width: thin; scrollbar-color: #705782 transparent; }
+*::-webkit-scrollbar { width: 5px; height: 5px; }
+*::-webkit-scrollbar-track, *::-webkit-scrollbar-corner { background: transparent; }
+*::-webkit-scrollbar-thumb { background: #705782; border-radius: 999px; }
+*::-webkit-scrollbar-button { display: none; width: 0; height: 0; }
+html, body { width: 100%; height: 100%; margin: 0; overflow: hidden; background: transparent; color: #f5eefb; font-family: Rubik, "Segoe UI", sans-serif; }
+button, textarea, input { font: inherit; }
+button { cursor: pointer; }
+.sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+.surface { position: absolute; inset: 8px; display: flex; flex-direction: column; gap: 10px; }
+.prompt { display: none; padding: 10px 13px; border-radius: 12px; background: rgba(74,44,29,.97); color: #ffe0b5; font-size: 12px; line-height: 1.4; }
+.prompt.visible { display: block; }
+.composer { flex: none; padding: 11px 13px; border-radius: 18px; background: rgba(20,15,30,.98); }
+.composer:focus-within { background: #1d1429; }
+.attachment-row { display: flex; gap: 8px; padding: 2px 0 8px; overflow-x: auto; }
+.attachment-row[hidden] { display: none; }
+.attachment { position: relative; flex: 0 0 100px; margin: 0; padding: 4px; border-radius: 9px; background: #30213f; }
+.attachment img { display: block; width: 92px; height: 48px; object-fit: contain; border-radius: 5px; background: #100d18; }
+.attachment figcaption { margin-top: 3px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 92px; color: #d9c4e8; font-size: 10px; }
+.attachment-remove { position: absolute; top: 1px; right: 1px; width: 20px; height: 20px; padding: 0; border: 0; border-radius: 50%; background: #21142e; color: #f5eefb; font-size: 16px; }
+.draft { display: block; width: 100%; min-height: 48px; max-height: 154px; padding: 4px 2px 8px; resize: none; border: 0; outline: 0; background: transparent; color: #fcf9ff; font-size: var(--companion-text-size, 14px); line-height: 1.45; }
+.draft::placeholder { color: #a38eae; }
+.composer-bottom { display: flex; align-items: center; gap: 12px; }
+.hint { flex: 1; color: #9b89aa; font-size: 10px; }
+.actions { display: flex; align-items: center; gap: 6px; margin-left: auto; }
+.button { min-height: 28px; border: 0; border-radius: 8px; padding: 5px 9px; color: #dec7ef; background: transparent; font-size: 11px; font-weight: 600; }
+.button:hover { background: rgba(206,153,246,.13); }
+.button:focus-visible, .console-screen:focus-visible { outline: 2px solid #ce9af4; outline-offset: 2px; }
+.button:disabled { opacity: .4; cursor: default; }
+.button.send { padding: 5px 13px; color: #1b1025; background: #ce9af4; }
+.button.send:hover:not(:disabled) { background: #e6baff; }
+.button.stop { color: #ffbcb8; }
+.presence { display: inline-flex; align-items: center; gap: 6px; color: #baa5c7; font-size: 10px; white-space: nowrap; }
+.presence::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: #77707e; }
+.presence[data-phase="idle"]::before { background: #70d5a1; }
+.presence[data-phase="working"]::before { background: #bd7dff; animation: pulse 1.6s ease-in-out infinite; }
+.presence[data-phase="attention"]::before { background: #ffc170; }
+@keyframes pulse { 50% { opacity: .45; } }
+.console { flex: 1; min-height: 0; display: flex; flex-direction: column; padding: 12px; border-radius: 16px; background: #100d18; }
+.console-screen { flex: 1; min-height: 0; margin: 0; overflow: auto; white-space: pre; color: #ded6ea; font: var(--companion-text-size, 14px)/1.45 "CaskaydiaCove NF", "Cascadia Code", Consolas, monospace; font-variant-ligatures: none; }
+@media (max-width: 590px) { .hint { display: none; } }

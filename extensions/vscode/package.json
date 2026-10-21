@@ -1,0 +1,14 @@
+{
+  "name": "ccf-terminal-focus",
+  "displayName": "CCF Terminal Focus",
+  "description": "Allows Chaos Cat Familiar to focus specific terminal tabs",
+  "version": "1.0.0",
+  "publisher": "wolframs",
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": ["Other"],
+  "activationEvents": ["onUri"],
+  "main": "./extension.js",
+  "contributes": {}
+}

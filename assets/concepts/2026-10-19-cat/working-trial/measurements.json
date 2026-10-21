@@ -1,0 +1,194 @@
+{
+  "working-sheet.png": {
+    "size": [
+      1536,
+      1024
+    ],
+    "alphaRange": [
+      0,
+      254
+    ],
+    "cornerRGBA": [
+      20,
+      4,
+      33,
+      1
+    ],
+    "frames": [
+      {
+        "anchor": [
+          256.0,
+          483
+        ],
+        "pedestalWidth": 334,
+        "bodyBounds": [
+          81,
+          11,
+          436,
+          483
+        ]
+      },
+      {
+        "anchor": [
+          256.5,
+          483
+        ],
+        "pedestalWidth": 333,
+        "bodyBounds": [
+          81,
+          11,
+          435,
+          483
+        ]
+      },
+      {
+        "anchor": [
+          256.5,
+          484
+        ],
+        "pedestalWidth": 333,
+        "bodyBounds": [
+          81,
+          11,
+          436,
+          484
+        ]
+      },
+      {
+        "anchor": [
+          256.5,
+          483
+        ],
+        "pedestalWidth": 333,
+        "bodyBounds": [
+          81,
+          11,
+          436,
+          483
+        ]
+      },
+      {
+        "anchor": [
+          256.5,
+          483
+        ],
+        "pedestalWidth": 333,
+        "bodyBounds": [
+          80,
+          10,
+          436,
+          483
+        ]
+      },
+      {
+        "anchor": [
+          256.5,
+          483
+        ],
+        "pedestalWidth": 333,
+        "bodyBounds": [
+          80,
+          11,
+          435,
+          483
+        ]
+      }
+    ]
+  },
+  "idle-to-working-sheet.png": {
+    "size": [
+      1536,
+      1024
+    ],
+    "alphaRange": [
+      0,
+      254
+    ],
+    "cornerRGBA": [
+      16,
+      1,
+      26,
+      0
+    ],
+    "frames": [
+      {
+        "anchor": [
+          256.0,
+          484
+        ],
+        "pedestalWidth": 334,
+        "bodyBounds": [
+          82,
+          12,
+          435,
+          484
+        ]
+      },
+      {
+        "anchor": [
+          256.0,
+          484
+        ],
+        "pedestalWidth": 334,
+        "bodyBounds": [
+          82,
+          12,
+          435,
+          484
+        ]
+      },
+      {
+        "anchor": [
+          256.0,
+          484
+        ],
+        "pedestalWidth": 334,
+        "bodyBounds": [
+          82,
+          12,
+          435,
+          484
+        ]
+      },
+      {
+        "anchor": [
+          256.0,
+          484
+        ],
+        "pedestalWidth": 334,
+        "bodyBounds": [
+          82,
+          12,
+          435,
+          484
+        ]
+      },
+      {
+        "anchor": [
+          256.0,
+          484
+        ],
+        "pedestalWidth": 334,
+        "bodyBounds": [
+          82,
+          11,
+          435,
+          484
+        ]
+      },
+      {
+        "anchor": [
+          256.0,
+          484
+        ],
+        "pedestalWidth": 334,
+        "bodyBounds": [
+          82,
+          12,
+          435,
+          484
+        ]
+      }
+    ]
+  }
+}

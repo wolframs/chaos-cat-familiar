@@ -1,0 +1,436 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Chaos Cat Familiar Overlay</title>
+    <style>
+      :root {
+        --bg: rgba(23, 27, 33, 0.92);
+        --panel: rgba(255, 255, 255, 0.08);
+        --text: #f7f5ef;
+        --muted: #c7c0b5;
+        --accent: #f95d02;
+        --danger: #ef4444;
+        --soft: rgba(255, 255, 255, 0.16);
+      }
+
+      body {
+        margin: 0;
+        font-family: "Segoe UI", sans-serif;
+        background: transparent;
+        color: var(--text);
+      }
+
+      body.shell-mode-mascot {
+        overflow: hidden;
+      }
+
+      .overlay {
+        margin: 16px;
+        padding: 16px;
+        border-radius: 18px;
+        background: linear-gradient(135deg, var(--bg), rgba(249, 93, 2, 0.35));
+        box-shadow: 0 18px 40px rgba(0, 0, 0, 0.35);
+        backdrop-filter: blur(18px);
+      }
+
+      body.shell-mode-mascot .overlay {
+        width: 136px;
+        margin: 12px;
+        padding: 0;
+        border-radius: 0;
+        background: transparent;
+        box-shadow: none;
+        backdrop-filter: none;
+      }
+
+      .row {
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-start;
+        gap: 12px;
+      }
+
+      .hero {
+        display: grid;
+        grid-template-columns: 104px minmax(0, 1fr);
+        gap: 14px;
+        align-items: center;
+        margin-top: 14px;
+      }
+
+      body.shell-mode-mascot .hero {
+        grid-template-columns: 1fr;
+        justify-items: center;
+        margin-top: 0;
+        gap: 4px;
+      }
+
+      .mascot-shell {
+        position: relative;
+        width: 104px;
+        height: 104px;
+        border-radius: 20px;
+        background: radial-gradient(circle at 30% 20%, rgba(255, 255, 255, 0.2), rgba(255, 255, 255, 0.04) 52%, rgba(0, 0, 0, 0.18) 100%);
+        overflow: hidden;
+        box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.12);
+      }
+
+      body.shell-mode-mascot .mascot-shell {
+        width: 136px;
+        height: 120px;
+        border-radius: 28px;
+        cursor: grab;
+        background: transparent;
+        box-shadow: none;
+      }
+
+      body.shell-mode-mascot.dragging .mascot-shell {
+        cursor: grabbing;
+      }
+
+      body.shell-mode-mascot .mascot-shell::after {
+        display: none;
+      }
+
+      .mascot-shell::after {
+        content: "";
+        position: absolute;
+        inset: 0;
+        border: 1px solid rgba(255, 255, 255, 0.08);
+        border-radius: 20px;
+        pointer-events: none;
+      }
+
+      .mascot-media,
+      .mascot-fallback {
+        position: absolute;
+        inset: 0;
+        width: 100%;
+        height: 100%;
+        object-fit: contain;
+      }
+
+      .mascot-fallback {
+        display: none;
+      }
+
+      .hero-copy {
+        min-width: 0;
+      }
+
+      body.shell-mode-mascot .hero-copy,
+      body.shell-mode-mascot .row,
+      body.shell-mode-mascot .stats,
+      body.shell-mode-mascot .actions,
+      body.shell-mode-mascot #approvals,
+      body.shell-mode-mascot .stats-pill,
+      body.shell-mode-mascot .context-panel {
+        display: none;
+      }
+
+      .mascot-mode-hint {
+        display: none;
+      }
+
+      .title {
+        font-size: 18px;
+        font-weight: 700;
+      }
+
+      .subtitle {
+        color: var(--muted);
+        font-size: 13px;
+      }
+
+      .pill {
+        padding: 4px 10px;
+        border-radius: 999px;
+        background: var(--soft);
+        font-size: 12px;
+      }
+
+      .stats {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 8px;
+        margin-top: 12px;
+      }
+
+      .stat {
+        padding: 10px;
+        border-radius: 12px;
+        background: var(--panel);
+        font-size: 12px;
+      }
+
+      .approval {
+        margin-top: 14px;
+        padding: 12px;
+        border-radius: 14px;
+        background: var(--panel);
+      }
+
+      .approval-header {
+        display: flex;
+        justify-content: space-between;
+        gap: 8px;
+        align-items: center;
+      }
+
+      .actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        margin-top: 10px;
+      }
+
+      button {
+        border: 0;
+        border-radius: 999px;
+        padding: 8px 12px;
+        cursor: pointer;
+      }
+
+      textarea,
+      input,
+      select {
+        width: 100%;
+        margin-top: 8px;
+        padding: 8px 10px;
+        border-radius: 10px;
+        border: 1px solid rgba(255, 255, 255, 0.12);
+        background: rgba(0, 0, 0, 0.2);
+        color: var(--text);
+        font: inherit;
+        box-sizing: border-box;
+      }
+
+      .subpanel {
+        margin-top: 10px;
+        padding: 10px;
+        border-radius: 12px;
+        background: rgba(255, 255, 255, 0.06);
+      }
+
+      .checkbox {
+        display: flex;
+        gap: 8px;
+        align-items: flex-start;
+        margin-top: 6px;
+      }
+
+      .checkbox input {
+        width: auto;
+        margin-top: 2px;
+      }
+
+      .allow {
+        background: var(--accent);
+        color: white;
+      }
+
+      .deny {
+        background: var(--danger);
+        color: white;
+      }
+
+      .defer,
+      .secondary {
+        background: rgba(255, 255, 255, 0.12);
+        color: var(--text);
+      }
+
+      #approvals:empty::before {
+        content: "No pending approvals.";
+        display: block;
+        margin-top: 14px;
+        color: var(--muted);
+      }
+
+      .hero-state {
+        display: inline-flex;
+        margin-top: 8px;
+        padding: 5px 10px;
+        border-radius: 999px;
+        background: rgba(255, 255, 255, 0.12);
+        font-size: 12px;
+      }
+
+      .hero-caption {
+        margin-top: 8px;
+        color: var(--muted);
+        font-size: 13px;
+      }
+
+      .hero-hint {
+        margin-top: 8px;
+        color: #ffd7b8;
+        font-size: 12px;
+      }
+
+      .overlay-toast,
+      .session-switcher,
+      .expanded-approval,
+      .context-panel,
+      .stats-pill {
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        background: rgba(12, 15, 21, 0.92);
+        backdrop-filter: blur(16px);
+        box-shadow: 0 16px 36px rgba(0, 0, 0, 0.28);
+      }
+
+      .overlay-toast {
+        display: none;
+        margin-bottom: 12px;
+        padding: 10px 12px;
+        border-radius: 14px;
+        position: relative;
+        overflow: hidden;
+      }
+
+      .overlay-toast.visible {
+        display: block;
+      }
+
+      .toast-progress {
+        position: absolute;
+        left: 0;
+        bottom: 0;
+        height: 3px;
+        background: var(--accent);
+      }
+
+      .stats-pill {
+        display: none;
+        margin-top: 12px;
+        padding: 7px 10px;
+        border-radius: 999px;
+        font-size: 11px;
+        gap: 10px;
+        align-items: center;
+        cursor: pointer;
+      }
+
+      .stats-pill.visible {
+        display: inline-flex;
+      }
+
+      .session-switcher,
+      .expanded-approval,
+      .context-panel {
+        display: none;
+        margin-top: 12px;
+        padding: 12px;
+        border-radius: 16px;
+      }
+
+      .session-switcher.visible,
+      .expanded-approval.visible,
+      .context-panel.visible {
+        display: block;
+      }
+
+      .switcher-row {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 10px;
+        padding: 9px 10px;
+        border-radius: 10px;
+        background: rgba(255, 255, 255, 0.04);
+        margin-top: 8px;
+      }
+
+      .switcher-row.active {
+        background: rgba(249, 93, 2, 0.18);
+      }
+
+      .approval-toolbar,
+      .context-actions {
+        display: flex;
+        gap: 8px;
+        flex-wrap: wrap;
+        margin-top: 10px;
+      }
+
+      .meta-row {
+        display: flex;
+        gap: 8px;
+        flex-wrap: wrap;
+        align-items: center;
+        margin-top: 8px;
+        font-size: 11px;
+        color: var(--muted);
+      }
+
+      .tag {
+        padding: 3px 8px;
+        border-radius: 999px;
+        background: rgba(255, 255, 255, 0.08);
+      }
+
+      .range-row {
+        display: flex;
+        gap: 8px;
+        align-items: center;
+        margin-top: 10px;
+      }
+
+      .range-row input[type="range"] {
+        flex: 1;
+      }
+    </style>
+  </head>
+  <body>
+    <main class="overlay">
+      <section class="overlay-toast" id="finishedToast">
+        <div><strong id="toastProject">Session</strong></div>
+        <div class="subtitle" id="toastLabel">Task completed</div>
+        <div class="meta-row">
+          <span class="tag" id="toastAssistant">Assistant</span>
+          <span>Ctrl+Enter dismiss</span>
+        </div>
+        <div class="toast-progress" id="toastProgress"></div>
+      </section>
+      <div class="row">
+        <div>
+          <div class="title">Chaos Cat Familiar</div>
+          <div class="subtitle" id="status">Waiting for assistant activity</div>
+        </div>
+        <div class="pill" id="collapsed">0 deferred</div>
+      </div>
+      <section class="hero">
+        <div class="mascot-shell">
+          <video class="mascot-media" id="mascotVideo" muted playsinline></video>
+          <img class="mascot-fallback" id="mascotFallback" alt="Mascot" />
+        </div>
+        <div class="hero-copy">
+          <div class="title" id="mascotName">Chaos Cat Familiar</div>
+          <div class="hero-state" id="mascotState">Idle</div>
+          <div class="hero-caption" id="mascotCaption">Waiting for an assistant session to connect.</div>
+          <div class="hero-hint" id="connectionHint"></div>
+        </div>
+      </section>
+      <section class="stats">
+        <div class="stat"><strong id="activeSessions">0</strong><br />active sessions</div>
+        <div class="stat"><strong id="recentEvents">0</strong><br />recent events</div>
+        <div class="stat"><strong id="topEditor">VS Code</strong><br />preferred editor</div>
+      </section>
+      <section class="stats-pill" id="statsPill"></section>
+      <section class="session-switcher" id="sessionSwitcher"></section>
+      <section class="actions">
+        <button class="secondary" id="openEditor">Open editor</button>
+        <button class="secondary" id="openTerminal">Open terminal</button>
+        <button class="secondary" id="openMascots">Mascots</button>
+        <button class="secondary" id="openPreview">Demo mascot</button>
+        <button class="secondary" id="connectClaude">Open dashboard</button>
+      </section>
+      <section id="approvals"></section>
+      <section class="expanded-approval" id="expandedApproval"></section>
+      <section class="context-panel" id="contextPanel"></section>
+    </main>
+    <script type="module" src="./overlay.js"></script>
+    <script type="module" src="./design-reload.js"></script>
+  </body>
+</html>

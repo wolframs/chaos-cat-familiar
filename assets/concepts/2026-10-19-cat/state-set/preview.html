@@ -1,0 +1,167 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Chaos Cat — four-state concept preview</title>
+<link rel="stylesheet" href="../preview-timeline.css">
+<style>
+  :root{color-scheme:dark}*{box-sizing:border-box}
+  body{font:16px system-ui,sans-serif;background:#20212a;color:#f5f0ff;margin:0 auto;padding:24px;max-width:1120px}
+  h1{font-size:26px;margin:0 0 8px}h2{font-size:18px;margin:0 0 10px}
+  p{line-height:1.45;color:#d0c9dc;max-width:960px}button,select,input{font:inherit}
+  button,select{padding:8px 12px;border:1px solid #82718f;border-radius:6px;background:#302b3c;color:#f8f1ff}
+  button{cursor:pointer}button:hover,select:hover{border-color:#d8aaff}button:focus-visible,select:focus-visible,input:focus-visible{outline:2px solid #e3bcff;outline-offset:2px}
+  .controls{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:18px 0}
+  .controls label{display:flex;align-items:center;gap:7px}#speed{width:110px}
+  .stages{display:grid;grid-template-columns:repeat(auto-fit,minmax(330px,1fr));gap:18px}
+  .card{border:1px solid #61586c;border-radius:12px;padding:14px;min-width:0}
+  .stage{width:320px;max-width:100%;height:320px;display:grid;place-items:center;border-radius:8px;background:#11121a}
+  .stage.light,.smallstage.light{background:#eee9df;color:#24202a}
+  canvas{width:300px;height:300px;max-width:100%;image-rendering:pixelated}
+  .smallstage{display:flex;align-items:center;gap:16px;margin-top:12px;border-radius:8px;background:#11121a;min-height:120px}
+  .smallstage canvas{width:120px;height:120px;flex:none}
+  .smallstage span{font-size:13px;max-width:180px}
+  .frame-timeline{border-top:1px solid #61586c;padding-top:18px}
+  #status{font-variant-numeric:tabular-nums}a{color:#dcb5ff}
+  .note{font-size:13px}
+</style>
+<h1>Chaos Cat — four-state concept preview</h1>
+<p>Inspect each state loop, every directed handoff, or a tour through all 12 handoffs. Select a route to see its individual playback steps below. Idle → Thinking has drawn intermediary poses with one 50/50 blend frame between each pair; the other handoffs still use endpoint blends.</p>
+<div class="controls">
+  <label for="route">Sequence <select id="route" aria-label="Sequence"></select></label>
+  <button id="toggle" type="button">Pause</button>
+  <button id="restart" type="button">Replay</button>
+  <button id="step" type="button">Next frame</button>
+  <label><input id="blend" type="checkbox" checked> Blend handoffs</label>
+  <label for="speed">Speed <input id="speed" type="range" min="0.25" max="2" step="0.25" value="1"></label>
+  <output id="speedValue" for="speed">1×</output>
+</div>
+<main class="stages">
+  <section class="card"><h2>Dark desktop</h2><div class="stage"><canvas id="largeDark" width="512" height="512"></canvas></div><div class="smallstage"><canvas id="smallDark" width="512" height="512"></canvas><span>120 px high, within CCF’s 136 × 120 area</span></div></section>
+  <section class="card"><h2>Light desktop</h2><div class="stage light"><canvas id="largeLight" width="512" height="512"></canvas></div><div class="smallstage light"><canvas id="smallLight" width="512" height="512"></canvas><span>Same artwork and timing on a light surface</span></div></section>
+</main>
+<section class="frame-timeline"><h2>Clickable frame timeline</h2><p>Each tile is one held atlas cell or one 45 ms blend sample. Click a tile to pause there; Next frame follows the same order.</p><div id="frameTimeline"></div></section>
+<p id="status" role="status">Loading local atlases…</p>
+<p class="note">This timeline is the source for the bundled v0.3 mascot clips. The Blend handoffs toggle also controls the five Idle → Thinking inter-pose blends. The other handoffs are staged endpoint blends and remain candidates for future refinement.</p>
+<script src="../preview-timeline.js"></script>
+<script>
+(() => {
+  'use strict';
+  const names={idle:'Idle',working:'Working',attention:'Needs Attention',thinking:'Thinking'};
+  const order=Object.keys(names);
+  const art={
+    idle:{src:'../idle-trial/idle-sheet.png',scale:334/346,anchors:[[278,502],[258.5,502],[277,502],[278,498],[258.5,499],[277,498]]},
+    working:{src:'../working-trial/working-sheet-v2.png',scale:1,anchors:[[256,486],[256,486],[256,486],[256.5,486],[256,486],[256,486]]},
+    attention:{src:'needs-attention.png',scale:334/339,anchors:Array.from({length:6},()=>[256,487])},
+    thinking:{src:'thinking-v2.png',scale:334/346,anchors:[[255.5,488],[255,488],[255,488],[255.5,488],[255,488],[255.5,488]]},
+    idleThinking:{src:'idle-to-thinking-v4.png',scale:0.92,anchors:[[266,506],[256.5,506],[269.5,506],[268,486],[258,486],[274.5,486]]}
+  };
+  const byId=id=>document.getElementById(id);
+  const smooth=x=>x*x*(3-2*x);
+  const timeline=createFrameTimeline(byId('frameTimeline'),(index)=>{running=false;stop();byId('toggle').textContent='Play';current=index;render();});
+  let frames=[],current=0,loopStart=0,ready=false,running=true,timer=0;
+
+  function single(state,cell,ms,phase){return {layers:[[state,cell,1]],ms,phase,detail:`${names[state]} · cell ${cell+1}`};}
+  function stateLoop(state){
+    if(state==='idle')return [single(state,0,2600,'Idle'),single(state,2,110,'Blink'),single(state,3,150,'Eyes closed'),single(state,2,110,'Opening eyes'),single(state,0,800,'Idle')];
+    return Array.from({length:6},(_,cell)=>single(state,cell,125,names[state]));
+  }
+  function handoff(from,to){
+    if(from==='idle'&&to==='thinking'){
+      const out=[single('idle',0,110,'Idle → Thinking')];
+      for(let cell=0;cell<6;cell++){
+        out.push({layers:[['idleThinking',cell,1]],ms:cell===0||cell===5?75:105,
+          phase:`Pose shift ${cell+1}/6`,detail:`Drawn intermediary · cell ${cell+1}`});
+        if(cell<5)out.push({layers:[['idleThinking',cell,0.5],['idleThinking',cell+1,0.5]],ms:45,
+          phase:`Pose blend ${cell+1} → ${cell+2}`,detail:`Pose cells ${cell+1} + ${cell+2} · 50/50`});
+      }
+      out.push(single('thinking',0,150,'Arrive: Thinking'));
+      return out;
+    }
+    const out=[single(from,0,110,`${names[from]} → ${names[to]}`)];
+    if(from==='idle')out.push(single('idle',2,100,'Closing eyes'),single('idle',3,110,'Eyes closed'));
+    const sourceCell=from==='idle'?3:0,targetCell=to==='idle'?3:0;
+    for(const alpha of [0.25,0.5,0.75])out.push({
+      layers:[[from,sourceCell,1-alpha],[to,targetCell,alpha]],ms:45,
+      phase:'Handoff blend',detail:`${names[from]} ${Math.round((1-alpha)*100)}% + ${names[to]} ${Math.round(alpha*100)}%`
+    });
+    out.push(single(to,targetCell,110,`Arrive: ${names[to]}`));
+    if(to==='idle')out.push(single('idle',2,100,'Opening eyes'),single('idle',0,150,'Idle'));
+    return out;
+  }
+  // Eulerian circuit: every ordered pair of distinct states appears exactly once.
+  function allPairsTour(){
+    const edges=Object.fromEntries(order.map(from=>[from,order.filter(to=>to!==from).reverse()]));
+    const stack=['idle'],path=[];
+    while(stack.length){const at=stack.at(-1);if(edges[at].length)stack.push(edges[at].pop());else path.push(stack.pop());}
+    return path.reverse();
+  }
+  const tour=allPairsTour();
+  function populateRoutes(){
+    const select=byId('route');
+    const option=(value,label)=>{const el=document.createElement('option');el.value=value;el.textContent=label;select.appendChild(el);};
+    option('tour','Full tour · all 12 handoffs');
+    for(const state of order)option(`loop:${state}`,`${names[state]} loop`);
+    for(const from of order)for(const to of order)if(from!==to)option(`pair:${from}:${to}`,`${names[from]} → ${names[to]}`);
+  }
+  function buildSequence(){
+    const route=byId('route').value;
+    if(route==='tour'){
+      frames=[];
+      for(let i=0;i<tour.length-1;i++)frames.push(...stateLoop(tour[i]),...handoff(tour[i],tour[i+1]));
+      loopStart=0;
+    }else if(route.startsWith('loop:')){
+      frames=stateLoop(route.split(':')[1]);loopStart=0;
+    }else{
+      const [,from,to]=route.split(':');
+      frames=[...stateLoop(from),...handoff(from,to),...stateLoop(to)];
+      loopStart=frames.length-stateLoop(to).length;
+    }
+    current=0;
+    timeline.setFrames(frames.map((frame,i)=>({label:frame.phase,detail:`${frame.detail} · ${frame.ms} ms`,index:i})),
+      (canvas,frame)=>drawLayers(canvas,frames[frame.index].layers));
+    render();schedule();
+  }
+  function drawCell(ctx,state,cell,alpha){
+    if(alpha<=0)return;
+    const atlas=art[state],anchor=atlas.anchors?.[cell]||[256,488],scale=atlas.scale;
+    ctx.globalAlpha=alpha;
+    ctx.drawImage(atlas.image,(cell%3)*512,Math.floor(cell/3)*512,512,512,
+      Math.round(256-anchor[0]*scale),Math.round(488-anchor[1]*scale),512*scale,512*scale);
+  }
+  function drawLayers(canvas,layers){
+    const ctx=canvas.getContext('2d'),ratio=canvas.width/512;
+    ctx.setTransform(ratio,0,0,ratio,0,0);ctx.clearRect(0,0,512,512);ctx.imageSmoothingEnabled=false;
+    const shown=byId('blend').checked?layers:layers.length===2?[layers[layers[1][2]>=0.5?1:0]]:layers;
+    ctx.globalCompositeOperation=shown.length===2?'lighter':'source-over';
+    for(const [state,cell,alpha] of shown)drawCell(ctx,state,cell,shown===layers?alpha:1);
+    ctx.globalAlpha=1;ctx.globalCompositeOperation='source-over';
+  }
+  function render(){
+    if(!ready||!frames.length)return;
+    const frame=frames[current];
+    for(const id of ['largeDark','largeLight','smallDark','smallLight'])drawLayers(byId(id),frame.layers);
+    timeline.setActive(current);
+    byId('status').textContent=`${byId('route').selectedOptions[0].textContent} · ${current+1}/${frames.length} · ${frame.phase} · ${running?'playing':'paused'}`;
+  }
+  function stop(){if(timer){clearTimeout(timer);timer=0;}}
+  function advance(){current=current+1<frames.length?current+1:loopStart;render();schedule();}
+  function schedule(){stop();if(ready&&running&&!document.hidden&&frames.length)timer=setTimeout(advance,frames[current].ms/Number(byId('speed').value));}
+  byId('route').onchange=buildSequence;
+  byId('toggle').onclick=()=>{running=!running;byId('toggle').textContent=running?'Pause':'Play';render();schedule();};
+  byId('restart').onclick=()=>{running=true;byId('toggle').textContent='Pause';buildSequence();};
+  byId('step').onclick=()=>{running=false;byId('toggle').textContent='Play';stop();advance();};
+  byId('blend').onchange=()=>{timeline.redraw();render();};
+  byId('speed').oninput=()=>{byId('speedValue').textContent=`${Number(byId('speed').value)}×`;schedule();};
+  document.addEventListener('visibilitychange',schedule);
+  window.addEventListener('pagehide',stop);
+  populateRoutes();
+  Promise.all(Object.values(art).map(atlas=>new Promise((resolve,reject)=>{
+    atlas.image=new Image();
+    atlas.image.onload=()=>atlas.image.width===1536&&atlas.image.height===1024?resolve():reject(new Error(`Unexpected atlas size: ${atlas.src}`));
+    atlas.image.onerror=()=>reject(new Error(`Could not load ${atlas.src}`));
+    atlas.image.src=atlas.src;
+  }))).then(()=>{ready=true;buildSequence();}).catch(error=>{byId('status').textContent=error.message;});
+})();
+</script>
+</html>

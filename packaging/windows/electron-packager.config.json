@@ -1,0 +1,13 @@
+{
+  "sourceDir": "apps/windows-shell",
+  "outDir": "packaging/windows/input",
+  "platform": "win32",
+  "arch": "x64",
+  "productName": "ChaosCatFamiliar",
+  "appName": "Chaos Cat Familiar",
+  "asar": true,
+  "overwrite": true,
+  "prune": false,
+  "icon": "packaging/windows/assets/pixel-art/ChaosCatFamiliar.ico",
+  "executableName": "ChaosCatFamiliar"
+}

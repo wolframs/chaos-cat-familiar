@@ -1,0 +1,126 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Arcane Keeper — blink handoff trial</title>
+<link rel="stylesheet" href="../preview-timeline.css">
+<style>
+body{font:16px system-ui;background:#20212a;color:#f5f0ff;margin:28px;max-width:1080px}
+h1{font-size:25px}h2{font-size:17px}p{max-width:880px;line-height:1.5;color:#cdc6dd}
+.controls{display:flex;gap:10px;align-items:center;flex-wrap:wrap}button,select,input{font:inherit}
+button,select{padding:8px 12px}main{display:flex;gap:20px;flex-wrap:wrap;margin-top:18px}
+.card{border:1px solid #575062;border-radius:12px;padding:16px}
+.stage{width:320px;height:320px;display:grid;place-items:center;border-radius:8px;background:#11121a}
+.light{background:#eee9df;color:#24202a}canvas{width:300px;height:300px;image-rendering:pixelated}
+.small{width:120px;height:120px}.smallstage{display:flex;align-items:center;gap:15px;margin-top:12px;border-radius:8px;background:#11121a}
+.smallstage.light{background:#eee9df}.smallstage span{font-size:13px;max-width:160px}
+a{color:#d6a7ff}#status{font-variant-numeric:tabular-nums}
+</style>
+<h1>Arcane Keeper — blink handoff trial</h1>
+<p>The cat blinks as it enters or leaves Working. The brief blend uses exact frames from the accepted Idle and Working loops. Compare the blend with a direct cut; the earlier generated transitions are in the <a href="preview.html">first preview</a>.</p>
+<div class="controls">
+ <select id="mode" aria-label="Sequence"><option value="demo">Full round trip</option><option value="forward">Idle → Working</option><option value="return">Working → idle</option></select>
+ <button id="toggle">Pause</button><button id="restart">Replay</button><button id="step">Step 100 ms</button>
+ <label><input id="blend" type="checkbox" checked> Blend during blink</label>
+ <label>Speed <input id="speed" type="range" min="0.25" max="2" step="0.25" value="1"></label>
+</div>
+<main>
+ <section class="card"><h2>Dark desktop</h2><div class="stage"><canvas id="largeDark" width="512" height="512"></canvas></div><div class="smallstage"><canvas id="smallDark" class="small" width="512" height="512"></canvas><span>120 px high, within CCF's 136×120 area</span></div></section>
+ <section class="card"><h2>Light desktop</h2><div class="stage light"><canvas id="largeLight" width="512" height="512"></canvas></div><div class="smallstage light"><canvas id="smallLight" class="small" width="512" height="512"></canvas><span>Same timing and art</span></div></section>
+</main>
+<section class="frame-timeline"><h2>Frame timeline</h2><p>Each tile is one held pose or one 45 ms blend sample. Click to pause at that point.</p><div id="frameTimeline"></div></section>
+<p id="status">Loading local atlases…</p>
+<p>This is a motion study, not final art. A little silhouette change remains where the two approved drawings meet. Live CCF and the approved files are unchanged.</p>
+<script src="../preview-timeline.js"></script>
+<script>
+const art={
+ idle:{src:'../idle-trial/idle-sheet.png',scale:334/346,anchors:[[278,502],[258.5,502],[277,502],[278,498],[258.5,499],[277,498]]},
+ working:{src:'../working-trial/working-sheet-v2.png',scale:1,anchors:[[256,486],[256,486],[256,486],[256.5,486],[256,486],[256,486]]}
+};
+const idleFrames=[{frame:0,ms:2600},{frame:2,ms:110},{frame:3,ms:150},{frame:2,ms:110},{frame:0,ms:800}];
+const idleLength=idleFrames.reduce((n,f)=>n+f.ms,0);
+const workLength=3000,transitionLength=650;
+let segments=[],timelineSteps=[],cycleLength=0,loopStart=0,position=0,lastTime=0,running=true,ready=false,raf=0,lastSignature='';
+const byId=id=>document.getElementById(id);
+const smooth=x=>{x=Math.max(0,Math.min(1,x));return x*x*(3-2*x);};
+const timeline=createFrameTimeline(byId('frameTimeline'),(index,frame)=>{running=false;if(raf)cancelAnimationFrame(raf);raf=0;byId('toggle').textContent='Play';position=frame.at;draw();});
+function plan(){
+ const mode=byId('mode').value;
+ const stages=mode==='demo'?[['idle',idleLength],['forward',transitionLength],['working',workLength],['return',transitionLength]]:
+  mode==='forward'?[['idle',500],['forward',transitionLength],['working',workLength]]:[['working',500],['return',transitionLength],['idle',idleLength]];
+ segments=[];let start=0;for(const [name,ms] of stages){segments.push({name,start,end:start+ms});start+=ms;}
+ cycleLength=start;loopStart=mode==='demo'?0:segments[2].start;position=0;lastTime=performance.now();lastSignature='';buildTimeline();draw();schedule();
+}
+function idleAt(ms){let t=ms%idleLength;for(const f of idleFrames){if(t<f.ms)return f.frame;t-=f.ms;}return 0;}
+function cue(at=position){
+ const segment=segments.find(s=>at<s.end)||segments.at(-1);
+ const t=at-segment.start;
+ if(segment.name==='idle')return {name:'Idle',layers:[['idle',idleAt(t),1]]};
+ if(segment.name==='working')return {name:'Working',layers:[['working',Math.floor(t/125)%6,1]]};
+ if(segment.name==='forward'){
+  if(t<100)return {name:'Idle',layers:[['idle',0,1]]};
+  if(t<200)return {name:'Blinking',layers:[['idle',2,1]]};
+  if(t<310)return {name:'Eyes closed',layers:[['idle',3,1]]};
+  if(t<490){const a=byId('blend').checked?smooth((t-310)/180):Number(t>=400);return {name:'Waking fire',layers:[['idle',3,1-a],['working',0,a]]};}
+  return {name:'Working',layers:[['working',0,1]]};
+ }
+ if(t<100)return {name:'Working',layers:[['working',0,1]]};
+ if(t<280){const a=byId('blend').checked?smooth((t-100)/180):Number(t>=190);return {name:'Settling fire',layers:[['working',0,1-a],['idle',3,a]]};}
+ if(t<390)return {name:'Eyes closed',layers:[['idle',3,1]]};
+ if(t<490)return {name:'Opening eyes',layers:[['idle',2,1]]};
+ return {name:'Idle',layers:[['idle',0,1]]};
+}
+function buildTimeline(){
+ timelineSteps=segments.flatMap(segment=>{
+  const length=segment.end-segment.start;
+  const offsets=segment.name==='idle'?(length===idleLength?[0,2600,2710,2860,2970]:[0]):
+   segment.name==='working'?Array.from({length:Math.ceil(length/125)},(_,i)=>i*125):
+   segment.name==='forward'?[0,100,200,310,355,400,445,490]:[0,100,145,190,235,280,390,490];
+  return offsets.map((offset,i)=>{
+   const at=segment.start+offset,ms=(offsets[i+1]??length)-offset,current=cue(at);
+   const sources=current.layers.filter(layer=>layer[2]>0).map(layer=>`${layer[0]} ${layer[1]+1}`).join(' + ');
+   return {at,label:current.name,detail:`${sources} · ${ms} ms`};
+  });
+ });
+ timeline.setFrames(timelineSteps,(canvas,frame)=>drawLayers(canvas,cue(frame.at).layers));
+}
+function drawCell(ctx,state,frame,opacity){if(opacity<=0)return;
+ const a=art[state], [x,y]=a.anchors[frame],scale=a.scale;
+ ctx.globalAlpha=opacity;
+ ctx.drawImage(a.image,(frame%3)*512,Math.floor(frame/3)*512,512,512,
+  Math.round(256-x*scale),Math.round(488-y*scale),512*scale,512*scale);
+}
+function drawLayers(canvas,layers){const ctx=canvas.getContext('2d'),ratio=canvas.width/512;
+ ctx.setTransform(ratio,0,0,ratio,0,0);ctx.clearRect(0,0,512,512);ctx.imageSmoothingEnabled=false;
+ for(const [state,frame,alpha] of layers)drawCell(ctx,state,frame,alpha);
+ ctx.globalAlpha=1;
+}
+function draw(){if(!ready)return;const current=cue();const signature=current.layers.map(([s,f,a])=>`${s}:${f}:${Math.round(a*30)}`).join('|');
+ if(signature!==lastSignature){
+  for(const id of ['largeDark','largeLight','smallDark','smallLight'])drawLayers(byId(id),current.layers);
+  lastSignature=signature;
+ }
+ let active=0;while(active+1<timelineSteps.length&&timelineSteps[active+1].at<=position)active++;
+ timeline.setActive(active);
+ byId('status').textContent=`${current.name} · ${running?'playing':'paused'} · ${byId('blend').checked?'blink blend':'direct cut'}`;
+}
+function tick(now){raf=0;if(!running||document.hidden)return;
+ const dt=Math.min(100,now-lastTime)*Number(byId('speed').value);lastTime=now;
+ position+=dt;if(position>=cycleLength)position=loopStart+(position-cycleLength)%(cycleLength-loopStart);
+ draw();schedule();
+}
+function schedule(){if(raf)cancelAnimationFrame(raf);raf=0;if(ready&&running&&!document.hidden){lastTime=performance.now();raf=requestAnimationFrame(tick);}}
+byId('mode').onchange=plan;
+byId('restart').onclick=()=>{running=true;byId('toggle').textContent='Pause';plan();};
+byId('toggle').onclick=()=>{running=!running;byId('toggle').textContent=running?'Pause':'Play';draw();schedule();};
+byId('step').onclick=()=>{running=false;byId('toggle').textContent='Play';if(raf)cancelAnimationFrame(raf);raf=0;
+ position+=100;if(position>=cycleLength)position=loopStart+(position-cycleLength)%(cycleLength-loopStart);draw();};
+byId('blend').onchange=()=>{lastSignature='';timeline.redraw();draw();};
+byId('speed').oninput=schedule;
+document.addEventListener('visibilitychange',schedule);window.addEventListener('pagehide',()=>{if(raf)cancelAnimationFrame(raf);});
+Promise.all(Object.values(art).map(a=>new Promise((resolve,reject)=>{a.image=new Image();
+ a.image.onload=()=>a.image.width===1536&&a.image.height===1024?resolve():reject(new Error('Unexpected atlas size'));
+ a.image.onerror=()=>reject(new Error('Could not load '+a.src));a.image.src=a.src;
+}))).then(()=>{ready=true;plan();}).catch(error=>{byId('status').textContent=error.message;});
+</script>
+</html>

@@ -1,0 +1,81 @@
+{
+  "size": [
+    1536,
+    1024
+  ],
+  "alphaRange": [
+    0,
+    254
+  ],
+  "frames": [
+    {
+      "anchor": [
+        256.0,
+        486
+      ],
+      "pedestalWidth": 334
+    },
+    {
+      "anchor": [
+        256.0,
+        486
+      ],
+      "pedestalWidth": 334
+    },
+    {
+      "anchor": [
+        256.0,
+        485
+      ],
+      "pedestalWidth": 334
+    },
+    {
+      "anchor": [
+        256.5,
+        486
+      ],
+      "pedestalWidth": 335
+    },
+    {
+      "anchor": [
+        256.0,
+        486
+      ],
+      "pedestalWidth": 334
+    },
+    {
+      "anchor": [
+        256.0,
+        486
+      ],
+      "pedestalWidth": 334
+    }
+  ],
+  "renderAnchors": [
+    [
+      256,
+      486
+    ],
+    [
+      256,
+      486
+    ],
+    [
+      256,
+      486
+    ],
+    [
+      256.5,
+      486
+    ],
+    [
+      256,
+      486
+    ],
+    [
+      256,
+      486
+    ]
+  ],
+  "renderAnchorNote": "Frame 3 measured alpha-edge bottom is 485, but static head/core comparison aligns vertically with frame 1 at offset 0. Use the common 486 baseline to avoid adding a false downward step. Raw measurements above are preserved."
+}

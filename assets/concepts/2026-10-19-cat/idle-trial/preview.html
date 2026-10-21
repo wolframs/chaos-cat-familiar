@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="en"><meta charset="utf-8"><title>Arcane Keeper — idle trial</title>
+<link rel="stylesheet" href="../preview-timeline.css">
+<style>
+body{font:16px system-ui;background:#20212a;color:#f5f0ff;margin:32px;max-width:1050px}h1{font-size:24px}p{max-width:780px;line-height:1.5;color:#cdc6dd}button,input{font:inherit}button{padding:8px 14px;margin-right:8px}main{display:flex;flex-wrap:wrap;gap:20px}.card{padding:16px;border:1px solid #595165;border-radius:12px}.stage{background:#12131b;border-radius:8px;display:flex;align-items:flex-end;justify-content:center;min-height:320px}.light{background:#eee9df;color:#24202a}canvas{width:300px;height:300px;image-rendering:pixelated}.small{width:120px;height:120px}h2{font-size:17px}.smallstage{display:flex;gap:12px;margin-top:12px;align-items:center}.smallstage span{max-width:100px;font-size:13px}#status{font-variant-numeric:tabular-nums}a{color:#d6a7ff}
+</style>
+<h1>Arcane Keeper — one idle blink trial</h1>
+<p>A generated six-frame atlas, shown raw and as a three-pose blink. The blink reuses the same open/half frames on the return path and aligns pedestal anchors. It does not rescale individual frames. Remaining outline changes are generation drift, not intended breathing.</p>
+<p><button id="toggle">Pause</button><button id="step">Next pose</button><button id="background">Light background</button><label>Speed <input id="speed" type="range" min="0.25" max="2" step="0.25" value="1"></label></p>
+<main>
+ <section class="card"><h2>Raw sheet — all six frames</h2><div class="stage"><canvas id="raw" width="512" height="512"></canvas></div><div class="smallstage"><canvas class="small" id="rawSmall" width="512" height="512"></canvas><span>120 px preview</span></div></section>
+ <section class="card"><h2>Anchored blink — selected poses</h2><div class="stage"><canvas id="aligned" width="512" height="512"></canvas></div><div class="smallstage"><canvas class="small" id="alignedSmall" width="512" height="512"></canvas><span>120 px preview</span></div></section>
+</main>
+<section class="frame-timeline"><h2>Raw sheet timeline</h2><p>Each cell is a playback step. Click one to pause on that frame.</p><div id="rawTimeline"></div></section>
+<section class="frame-timeline"><h2>Anchored blink timeline</h2><p>The repeated poses are listed separately in playback order.</p><div id="blinkTimeline"></div></section>
+<p id="status">Loading local atlas…</p><p>Draft only: not a validated low-resolution sprite master, and not installed in CCF. <a href="idle-sheet.png">Inspect the source sheet</a>.</p>
+<script src="../preview-timeline.js"></script>
+<script>
+const image = new Image();
+const anchors = [[278,502],[258.5,502],[277,502],[278,498],[258.5,499],[277,498]];
+const blink = [{frame:0,ms:2600},{frame:2,ms:110},{frame:3,ms:150},{frame:2,ms:110},{frame:0,ms:800}];
+const raw = [{frame:0,ms:2400},{frame:1,ms:200},{frame:2,ms:110},{frame:3,ms:150},{frame:4,ms:110},{frame:5,ms:800}];
+let running=true, ready=false, timer=null, blinkIndex=0, rawIndex=0, blinkRemaining=2600, rawRemaining=2400, last=0;
+const pause=()=>{running=false;cancel();document.getElementById('toggle').textContent='Play';};
+const rawTimeline=createFrameTimeline(document.getElementById('rawTimeline'),index=>{pause();rawIndex=index;rawRemaining=raw[index].ms;render();});
+const blinkTimeline=createFrameTimeline(document.getElementById('blinkTimeline'),index=>{pause();blinkIndex=index;blinkRemaining=blink[index].ms;render();});
+function draw(canvas,frame,align){const ctx=canvas.getContext('2d'),ratio=canvas.width/512;ctx.setTransform(ratio,0,0,ratio,0,0);ctx.clearRect(0,0,512,512);ctx.imageSmoothingEnabled=false;const [x,y]=anchors[frame];ctx.drawImage(image,frame%3*512,Math.floor(frame/3)*512,512,512,align?Math.round(256-x):0,align?488-y:0,512,512);}
+function render(){if(!ready)return;draw(document.getElementById('raw'),raw[rawIndex].frame,false);draw(document.getElementById('rawSmall'),raw[rawIndex].frame,false);draw(document.getElementById('aligned'),blink[blinkIndex].frame,true);draw(document.getElementById('alignedSmall'),blink[blinkIndex].frame,true);rawTimeline.setActive(rawIndex);blinkTimeline.setActive(blinkIndex);document.getElementById('status').textContent=`Raw frame ${raw[rawIndex].frame+1} · anchored frame ${blink[blinkIndex].frame+1} · ${running?'playing':'paused'}`;}
+function cancel(){clearTimeout(timer);timer=null;}
+function schedule(){cancel();if(!running||document.hidden||!ready)return;last=performance.now();timer=setTimeout(tick,Math.max(10,Math.min(blinkRemaining,rawRemaining)/Number(document.getElementById('speed').value)));}
+function tick(){const elapsed=(performance.now()-last)*Number(document.getElementById('speed').value);blinkRemaining-=elapsed;rawRemaining-=elapsed;while(blinkRemaining<=0){blinkIndex=(blinkIndex+1)%blink.length;blinkRemaining+=blink[blinkIndex].ms;}while(rawRemaining<=0){rawIndex=(rawIndex+1)%raw.length;rawRemaining+=raw[rawIndex].ms;}render();schedule();}
+document.getElementById('toggle').onclick=()=>{running=!running;document.getElementById('toggle').textContent=running?'Pause':'Play';render();schedule();};
+document.getElementById('step').onclick=()=>{running=false;document.getElementById('toggle').textContent='Play';cancel();blinkIndex=(blinkIndex+1)%blink.length;rawIndex=(rawIndex+1)%raw.length;blinkRemaining=blink[blinkIndex].ms;rawRemaining=raw[rawIndex].ms;render();};
+document.getElementById('speed').oninput=schedule;
+document.getElementById('background').onclick=()=>{document.querySelectorAll('.stage,.smallstage').forEach(el=>el.classList.toggle('light'));};
+document.addEventListener('visibilitychange',schedule);window.addEventListener('pagehide',cancel);
+image.onload=()=>{if(image.width!==1536||image.height!==1024){document.getElementById('status').textContent='Unexpected atlas size';return;}ready=true;rawTimeline.setFrames(raw.map(f=>({label:`Atlas ${f.frame+1}`,detail:`${f.ms} ms`,...f})),(canvas,f)=>draw(canvas,f.frame,false));blinkTimeline.setFrames(blink.map(f=>({label:`Atlas ${f.frame+1}`,detail:`${f.ms} ms`,...f})),(canvas,f)=>draw(canvas,f.frame,true));render();schedule();};image.onerror=()=>document.getElementById('status').textContent='Could not load idle-sheet.png';image.src='idle-sheet.png';
+</script></html>

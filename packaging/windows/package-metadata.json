@@ -1,0 +1,19 @@
+{
+  "identityName": "wolframs.ChaosCatFamiliar",
+  "version": "0.1.0",
+  "displayName": "Chaos Cat Familiar",
+  "executableBaseName": "ChaosCatFamiliar",
+  "productName": "ChaosCatFamiliar",
+  "applicationId": "ChaosCatFamiliar",
+  "executablePath": "ChaosCatFamiliar.exe",
+  "publisher": "CN=CCF-DEV",
+  "publisherDisplayName": "Wolfram Siener",
+  "description": "A desktop companion for Claude Code with overlay approvals, mascot states, and editor handoff.",
+  "protocols": [
+    {
+      "name": "ccf",
+      "displayName": "Chaos Cat Familiar URL"
+    }
+  ],
+  "appUserModelId": "wolframs.ChaosCatFamiliar"
+}

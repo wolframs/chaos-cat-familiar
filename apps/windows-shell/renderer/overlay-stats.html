@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Chaos Cat Familiar Overlay Stats</title>
+    <style>
+      html,
+      body {
+        margin: 0;
+        padding: 0;
+        background: transparent;
+        overflow: hidden;
+        font-family: "Segoe UI", sans-serif;
+      }
+
+      .pill {
+        display: none;
+        align-items: center;
+        justify-content: center;
+        gap: 10px;
+        height: 38px;
+        border-radius: 999px;
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        background: rgba(12, 15, 21, 0.92);
+        backdrop-filter: blur(16px);
+        box-shadow: 0 16px 36px rgba(0, 0, 0, 0.28);
+        color: #f7f5ef;
+        font-size: 11px;
+        user-select: none;
+        cursor: pointer;
+      }
+
+      .pill.visible {
+        display: flex;
+      }
+    </style>
+  </head>
+  <body>
+    <main class="pill" id="statsPill"></main>
+    <script type="module" src="./overlay-stats.js"></script>
+  </body>
+</html>

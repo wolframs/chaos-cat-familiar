@@ -1,0 +1,15 @@
+# Node / npm
+node_modules/
+dist/
+coverage/
+extensions/vscode/*.vsix
+
+# Windows
+Thumbs.db
+
+# Build artifacts
+.tmp/
+packaging/windows/out/
+packaging/windows/out-test/
+packaging/windows/input/*
+!packaging/windows/input/README.md

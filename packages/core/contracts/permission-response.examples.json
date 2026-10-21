@@ -1,0 +1,52 @@
+{
+  "allow": {
+    "hookSpecificOutput": {
+      "hookEventName": "PermissionRequest",
+      "decision": {
+        "behavior": "allow"
+      }
+    }
+  },
+  "deny": {
+    "hookSpecificOutput": {
+      "hookEventName": "PermissionRequest",
+      "decision": {
+        "behavior": "deny"
+      }
+    }
+  },
+  "allowWithUpdatedInput": {
+    "hookSpecificOutput": {
+      "hookEventName": "PermissionRequest",
+      "decision": {
+        "behavior": "allow",
+        "updatedInput": {
+          "answers": {
+            "editor": "VS Code"
+          }
+        }
+      }
+    }
+  },
+  "allowWithUpdatedPermissions": {
+    "hookSpecificOutput": {
+      "hookEventName": "PermissionRequest",
+      "decision": {
+        "behavior": "allow",
+        "updatedPermissions": [
+          {
+            "type": "addRules",
+            "destination": "localSettings",
+            "behavior": "allow",
+            "rules": [
+              {
+                "toolName": "Edit",
+                "ruleContent": "C:/work/project/**"
+              }
+            ]
+          }
+        ]
+      }
+    }
+  }
+}

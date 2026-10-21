@@ -1,0 +1,59 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Package
+  xmlns="http://schemas.microsoft.com/appx/manifest/foundation/windows10"
+  xmlns:uap="http://schemas.microsoft.com/appx/manifest/uap/windows10"
+  xmlns:uap3="http://schemas.microsoft.com/appx/manifest/uap/windows10/3"
+  IgnorableNamespaces="uap uap3">
+  <Identity
+    Name="wolframs.ChaosCatFamiliar"
+    Publisher="CN=CCF-DEV"
+    Version="0.1.0.0" />
+
+  <Properties>
+    <DisplayName>Chaos Cat Familiar</DisplayName>
+    <PublisherDisplayName>Wolfram Siener</PublisherDisplayName>
+    <Description>A desktop companion for Claude Code with overlay approvals, mascot states, and editor handoff.</Description>
+    <Logo>assets/generated/StoreLogo.png</Logo>
+  </Properties>
+
+  <Dependencies>
+    <TargetDeviceFamily
+      Name="Windows.Desktop"
+      MinVersion="10.0.19041.0"
+      MaxVersionTested="10.0.22621.0" />
+  </Dependencies>
+
+  <Resources>
+    <Resource Language="en-us" />
+  </Resources>
+
+  <Applications>
+    <Application
+      Id="ChaosCatFamiliar"
+      Executable="ChaosCatFamiliar.exe"
+      EntryPoint="Windows.FullTrustApplication">
+      <uap:VisualElements
+        DisplayName="Chaos Cat Familiar"
+        Description="A desktop companion for Claude Code with overlay approvals, mascot states, and editor handoff."
+        BackgroundColor="transparent"
+        Square44x44Logo="assets/generated/Square44x44Logo.png"
+        Square150x150Logo="assets/generated/Square150x150Logo.png">
+        <uap:DefaultTile
+          Square310x310Logo="assets/generated/Square310x310Logo.png"
+          Wide310x150Logo="assets/generated/Wide310x150Logo.png" />
+      </uap:VisualElements>
+            <Extensions>
+        <uap:Extension Category="windows.protocol">
+          <uap:Protocol Name="ccf">
+            <uap:DisplayName>Chaos Cat Familiar URL</uap:DisplayName>
+          </uap:Protocol>
+        </uap:Extension>
+      </Extensions>
+    </Application>
+  </Applications>
+
+  <Capabilities>
+    <rescap:Capability xmlns:rescap="http://schemas.microsoft.com/appx/manifest/foundation/windows10/restrictedcapabilities" Name="runFullTrust" />
+  </Capabilities>
+</Package>
+

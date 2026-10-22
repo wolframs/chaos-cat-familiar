@@ -75,6 +75,22 @@ const IPC_EVENTS = [
   "ccf:renderer-log",
   "ccf:set-overlay-bounds"
 ];
+// The cat and its companion panels share one explicit always-on-top level.
+// Electron's default level ("floating", also what `alwaysOnTop: true` uses)
+// re-stacks a window directly below Shell_TrayWnd on creation and on every
+// activation (MoveBehindTaskBarIfNeeded, electron v36 native_window_views.cc).
+// SetWindowPos removes WS_EX_TOPMOST from a window inserted after a
+// non-topmost window, so whenever the taskbar is not topmost at that moment
+// (fullscreen or "rude" apps, shell glitches), clicking a panel demotes it into
+// the normal band, where a maximized app covers it. Every level outside
+// Electron's behind-taskbar set maps to a plain HWND_TOPMOST on Windows.
+const CLUSTER_TOP_LEVEL = "pop-up-menu";
+// isAlwaysOnTop() reads the real WS_EX_TOPMOST bit, so a cheap poll catches
+// demotions from causes nobody has identified yet, and logs them.
+const CLUSTER_TOPMOST_CHECK_MS = 2000;
+// A Content-Security-Policy meta tag would silence this at the source, but in
+// smoke runs it made Electron hang on exit intermittently (2026-10-22).
+const ELECTRON_SECURITY_WARNING = /Electron Security Warning/;
 
 function mkdirp(dirPath) {
   fs.mkdirSync(dirPath, { recursive: true });
@@ -301,6 +317,7 @@ export function createWindowsShellRuntime({
   let companionPreviewSnapshot = null;
   let companionHudActive = false;
   let syncingCompanionCluster = false;
+  let clusterTopmostTimer = null;
   let hookServer = null;
   let controller = null;
   let settingsStore = null;
@@ -317,6 +334,7 @@ export function createWindowsShellRuntime({
   let mascotWarmupPromise = null;
   let hookOperations = Promise.resolve();
   const utilityTimers = new Set();
+  const securityWarningViews = new Set();
   const cleanupFns = [];
 
   function onWithCleanup(emitter, eventName, handler) {
@@ -379,6 +397,7 @@ export function createWindowsShellRuntime({
     if (!canShow || !companionHudActive) {
       companionConversationWindow?.hide();
       companionStatusWindow?.hide();
+      stopClusterTopmostWatch();
     } else if (!syncingCompanionCluster) {
       syncingCompanionCluster = true;
       try {
@@ -393,12 +412,76 @@ export function createWindowsShellRuntime({
           const current = window.getBounds();
           if (["x", "y", "width", "height"].some((key) => current[key] !== nextBounds[key])) window.setBounds(nextBounds);
         }
+        const revealing = !companionConversationWindow.isVisible() || !companionStatusWindow.isVisible();
         companionConversationWindow.showInactive();
         companionStatusWindow.showInactive();
+        if (revealing) raiseCompanionCluster("show");
+        startClusterTopmostWatch();
       } finally {
         syncingCompanionCluster = false;
       }
     }
+  }
+
+  function keepOnTop(window) {
+    window.setAlwaysOnTop(true, CLUSTER_TOP_LEVEL);
+  }
+
+  function visibleClusterWindows() {
+    // Cat last: each setAlwaysOnTop puts its window at the top of the topmost band.
+    return [companionStatusWindow, companionConversationWindow, overlayWindow]
+      .filter((window) => window && !window.isDestroyed?.() && window.isVisible());
+  }
+
+  function lostTopmost(windows) {
+    return windows.filter((window) => window.isAlwaysOnTop?.() === false);
+  }
+
+  function warnLostTopmost(windows, reason) {
+    if (windows.length) logger?.warn("window", "Companion window lost always-on-top; restored", {
+      reason, windows: windows.map((window) => window.getTitle?.() ?? "unknown")
+    });
+  }
+
+  // Re-asserts the shared level for the whole cluster and stacks it together.
+  function raiseCompanionCluster(reason, { focusComposer = false } = {}) {
+    const windows = visibleClusterWindows();
+    warnLostTopmost(lostTopmost(windows), reason);
+    for (const window of windows) keepOnTop(window);
+    if (focusComposer && companionConversationWindow?.isVisible()) {
+      companionConversationWindow.focus();
+      companionConversationWindow.webContents.executeJavaScript?.("document.getElementById('draft')?.focus()")
+        ?.catch?.(() => {});
+    }
+  }
+
+  // Restores only demoted windows. Restacking on every blur would push the
+  // cluster above windows the user has just raised on purpose.
+  function repairClusterTopmost(reason) {
+    const lost = lostTopmost(visibleClusterWindows());
+    if (!lost.length) return;
+    warnLostTopmost(lost, reason);
+    for (const window of lost) keepOnTop(window);
+  }
+
+  function startClusterTopmostWatch() {
+    if (clusterTopmostTimer !== null) return;
+    clusterTopmostTimer = timers.setInterval(() => repairClusterTopmost("watchdog"), CLUSTER_TOPMOST_CHECK_MS);
+  }
+
+  function stopClusterTopmostWatch() {
+    if (clusterTopmostTimer === null) return;
+    timers.clearInterval(clusterTopmostTimer);
+    clusterTopmostTimer = null;
+  }
+
+  function clusterHasFocus() {
+    return [overlayWindow, companionConversationWindow].some((window) => window?.isFocused?.());
+  }
+
+  function wireClusterWindow(window, onFocus) {
+    window.on("focus", onFocus);
+    window.on("blur", () => repairClusterTopmost("blur"));
   }
 
   function createCompanionWindow(kind) {
@@ -407,10 +490,12 @@ export function createWindowsShellRuntime({
       width: isConversation ? 700 : 520,
       height: isConversation ? 500 : 144,
       show: false, frame: false, transparent: true, resizable: false,
-      skipTaskbar: true, alwaysOnTop: true,
+      skipTaskbar: true,
       title: `Chaos Cat Familiar Companion ${isConversation ? "Conversation" : "Status"}`,
       webPreferences: { preload: path.join(SHELL_ROOT, "preload.js") }
     });
+    keepOnTop(window);
+    wireClusterWindow(window, () => raiseCompanionCluster("panel-focus"));
     if (!isConversation) window.setIgnoreMouseEvents?.(true, { forward: true });
     window.webContents.on("did-finish-load", () => syncOverlayHudWindows());
     if (isConversation) window.webContents.on("before-input-event", (event, input) => {
@@ -689,6 +774,13 @@ export function createWindowsShellRuntime({
 
     const listen = transient ? (emitter, event, handler) => emitter.on(event, handler) : onWithCleanup;
     listen(window.webContents, "console-message", (_event, level, message, line, sourceId) => {
+      // Electron's dev-only security warning repeats on every page load and
+      // design reload; keep one per view, at debug level, out of the console.
+      if (ELECTRON_SECURITY_WARNING.test(String(message))) {
+        if (!securityWarningViews.has(name)) logger?.debug("renderer-console", `${name}: ${message}`, { level });
+        securityWarningViews.add(name);
+        return;
+      }
       logger?.info("renderer-console", `${name}: ${message}`, {
         level,
         line,
@@ -803,12 +895,12 @@ export function createWindowsShellRuntime({
       transparent: true,
       resizable: true,
       skipTaskbar: true,
-      alwaysOnTop: true,
       title: "Chaos Cat Familiar Overlay",
       webPreferences: {
         preload: path.join(SHELL_ROOT, "preload.js")
       }
     });
+    keepOnTop(overlayWindow);
 
     overlayWindow.loadFile(path.join(SHELL_ROOT, "renderer", "overlay.html"));
 
@@ -828,6 +920,9 @@ export function createWindowsShellRuntime({
     onWithCleanup(overlayWindow, "hide", syncOverlayHudWindows);
     onWithCleanup(overlayWindow, "focus", registerGlobalShortcuts);
     onWithCleanup(overlayWindow, "blur", registerGlobalShortcuts);
+    // Clicking (or starting to drag) the cat brings its panels back with it.
+    onWithCleanup(overlayWindow, "focus", () => raiseCompanionCluster("cat-focus"));
+    onWithCleanup(overlayWindow, "blur", () => repairClusterTopmost("blur"));
 
   }
 
@@ -884,7 +979,14 @@ export function createWindowsShellRuntime({
     positionOverlayWindow();
     overlayWindow.showInactive();
     syncOverlayHudWindows();
+    raiseCompanionCluster("show-overlay");
     saveSettingsPatch({ overlayVisible: true });
+  }
+
+  // Escape hatch for a cluster buried behind other windows.
+  function bringCompanionToFront(reason) {
+    if (!overlayWindow.isVisible()) showOverlay();
+    raiseCompanionCluster(reason, { focusComposer: true });
   }
 
   function hideOverlayWindow() {
@@ -970,8 +1072,13 @@ export function createWindowsShellRuntime({
     const bindings = [
       {
         accelerator: hotkeys.toggleOverlay,
+        // Summon semantics while the work companion is up: a visible but
+        // unfocused (possibly buried) cluster comes to the front first; the
+        // next press hides it. Avoids claiming another system-wide shortcut.
         action: () => {
-          overlayWindow.isVisible() ? overlayWindow.hide() : showOverlay();
+          if (!overlayWindow.isVisible()) showOverlay();
+          else if (companionHudActive && mascotModeEnabled() && !clusterHasFocus()) bringCompanionToFront("hotkey");
+          else overlayWindow.hide();
         }
       },
       {
@@ -1131,6 +1238,7 @@ export function createWindowsShellRuntime({
     });
     tray.setContextMenu(
       Menu.buildFromTemplate([
+        { label: "Bring Companion to Front", click: () => bringCompanionToFront("tray") },
         { label: "Open Dashboard", click: () => showDashboard() },
         {
           label: "Show Overlay",
@@ -1697,6 +1805,7 @@ export function createWindowsShellRuntime({
 
       for (const timer of utilityTimers) timers.clearTimeout(timer);
       utilityTimers.clear();
+      stopClusterTopmostWatch();
       shellUiState?.dispose?.();
       unregisterIpc();
 

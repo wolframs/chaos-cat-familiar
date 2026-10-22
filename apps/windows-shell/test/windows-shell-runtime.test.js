@@ -935,3 +935,27 @@ test("shutdown waits for active hook checks and skips startup writes and queued 
   await Promise.all([stopping, queuedRepair]);
   assert.deepEqual(writes, []);
 });
+
+test("Electron's repeated dev security warning stays out of the console and log", async (t) => {
+  const root = makeTempDir();
+  const electron = createFakeElectron({ home: root, appData: root });
+  const runtime = createWindowsShellRuntime({
+    electron,
+    processLike: { env: { CCF_HOME_OVERRIDE: root, CCF_APPDATA_OVERRIDE: root, CCF_PORT_OVERRIDE: "0", CCF_TEST_MODE: "1" },
+      argv: [], execPath: process.execPath, pid: process.pid },
+    services: {
+      hookInstaller: { async diagnose() { return { hookExists: true, drift: { healthy: true }, health: { ok: true } }; } },
+      mascotLibrary: { list() { return { mascots: [] }; }, async warmBundledAssets() {} }
+    }
+  });
+  t.after(async () => { await runtime.stop(); });
+  await runtime.start();
+  const cat = [...FakeBrowserWindow.windowsByWebContents.values()].find((window) => window.getTitle().endsWith("Overlay"));
+  const warning = "%cElectron Security Warning (Insecure Content-Security-Policy) font-weight: bold; This renderer process has either no Content Security Policy set";
+  for (let reload = 0; reload < 3; reload += 1) cat.webContents.emit("console-message", {}, 2, warning, 1, "electron/js2c/renderer_init");
+  cat.webContents.emit("console-message", {}, 1, "mascot ready", 10, "overlay.js");
+  // The console receives exactly the lines the log file gets.
+  const log = fs.readFileSync(path.join(root, "chaos-cat-familiar", "logs", "chaos-cat-familiar.log"), "utf8");
+  assert.equal(log.includes("Security Warning"), false);
+  assert.match(log, /overlay: mascot ready/, "other renderer output still reaches the log");
+});

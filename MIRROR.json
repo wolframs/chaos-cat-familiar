@@ -2,15 +2,22 @@
   "excluded_files": 8,
   "file_counts": {
     "add": 3,
-    "copy": 236,
+    "copy": 238,
     "override": 6,
     "redact": 4
   },
   "manifest_name": "chaos-cat-familiar",
   "manifest_sha256": "ecf20cbbf37eaf0e7c519adbd46b72665fcccf24a17f45f46a5c4090561bfca4",
   "open_reviews": 0,
-  "source_commit": "1ed20d9b4c7d8bf35b77caf4e2bf720f2482a47f",
-  "staged_files": 249,
+  "source_commit": "6badf958d369a44d79215016252b9a5a0d78aee2",
+  "staged_files": 251,
   "tool_version": "1",
-  "unclassified_files": 0
+  "unclassified_files": 0,
+  "updates": [
+    {
+      "date": "2026-10-22",
+      "source_commit": "6badf958d369a44d79215016252b9a5a0d78aee2",
+      "how": "manual port of 1ed20d9b..HEAD: changed files copied, docs/STATUS.md edited in place (trimmed copy)"
+    }
+  ]
 }

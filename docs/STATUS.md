@@ -28,13 +28,31 @@ As of 2026-10-20. Dev-run only: no installer, no packaged build has been tested.
 - The companion has one composer under the live terminal. Ctrl+numpad +/- changes text size
   (14 px default), Ctrl+0 resets it, and the terminal reflows. CCF-hosted companion sessions
   suppress their duplicate custom status line while continuing to feed the status chips.
-  Claude's native prompt and built-in footer still render.
+  The conversation view hides Claude's own idle input box (spacer, rules, `❯` row) and
+  keeps the mode line; dialogs, menus and a box holding real input still render in full.
 - Images can be pasted, dropped or selected with Attach, previewed and removed before sending.
   Image-only messages work. Pending thumbnails survive design reloads; sent files remain in
   CCF's app-data attachment folder for later reads by the session.
 - The terminal now renders up to 1,000 styled scrollback lines and preserves a scrolled-up
   reading position. The companion launcher disables Claude's alternate screen only when
   hosted by CCF, so conversation output reaches that history.
+- Panels no longer fall behind maximized apps while the cat stays on top (2026-10-22). The
+  cat and panels share one explicit topmost level, and a watchdog restores and logs lost
+  topmost bits. Escape hatches: click the cat, press Ctrl+Shift+Space (it summons an
+  unfocused companion and hides a focused one), or use the tray's "Bring Companion to Front".
+  The real trigger on the original desktop is still unconfirmed; a `lost always-on-top` log line
+  names the window and the moment.
+
+## Overlay companion: open ideas (not built)
+
+- Electron's dev-only "Insecure Content-Security-Policy" warning is now logged once per view
+  at debug level instead of on every load. The real fix, a `script-src 'self'` meta tag on
+  each renderer page, removed the warning and broke no page, but made 3 of 6 smoke runs hang
+  on exit (0 of 6 without it). Find why before trying again.
+- Log lines print contexts as `[Object: null prototype] {…}`; plain JSON would read better.
+- Optionally render the PTY a few rows taller while the idle prompt box is hidden, so Claude
+  keeps the same usable height.
+- A tray or hotkey toggle to show Claude's prompt box again when it is wanted.
 
 ## Running it day to day
 

@@ -67,6 +67,20 @@ test("missing payload fields leave the HUD empty and cold cache keeps its diagno
   assert.deepEqual(rows[0].segments[0].chips.map((chip) => chip.text), ["+184k", "43%", "2x"]);
 });
 
+test("a reset 5h window stays visible at 0 %, whether Claude Code sends the old window or none", () => {
+  const stale = payload();
+  stale.rate_limits.five_hour = { used_percentage: 61, resets_at: (nowMs - 10 * 60 * 1000) / 1000 };
+  const missing = payload();
+  delete missing.rate_limits.five_hour;
+  for (const sample of [stale, missing]) {
+    const rows = companionGaugeRows(sample, { nowMs });
+    assert.deepEqual(rows.map((row) => row.id), ["context", "five-hour", "seven-day", "cache"]);
+    assert.equal(rows[1].segments[0].value, "0%");
+    assert.equal(rows[1].segments[0].bar, 0);
+    assert.deepEqual(rows[1].segments[0].chips, []);
+  }
+});
+
 test("HTML renderer has transparent rows, coloured connected blocks, and escapes payload text", () => {
   const sample = payload();
   sample.prompt_cache.ttl = '<img src=x onerror="bad()">';

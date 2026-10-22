@@ -1,5 +1,5 @@
 import { normalizeCompanionSnapshot, normalizeSubmission, shouldSubmitOnKeydown } from "./companion-conversation-model.js";
-import { renderCompanionTerminal } from "./companion-terminal.js";
+import { hideClaudePromptBox, renderCompanionTerminal } from "./companion-terminal.js";
 import { installCompanionTextSize } from "./companion-text-size.js";
 import { promptKeySequence, terminalViewportSize } from "./companion-terminal-controls.js";
 
@@ -74,7 +74,8 @@ function render() {
     const scroller = elements.consoleScreen;
     const followsOutput = scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight < 40;
     const readingPosition = scroller.scrollTop;
-    renderCompanionTerminal(scroller, terminal);
+    // The composer below replaces Claude's own input box; see hideClaudePromptBox.
+    renderCompanionTerminal(scroller, terminal.lines ? { ...terminal, lines: hideClaudePromptBox(terminal.lines) } : terminal);
     if (followsOutput) scroller.scrollTop = scroller.scrollHeight;
     else scroller.scrollTop = readingPosition;
   }

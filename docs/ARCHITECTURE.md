@@ -57,12 +57,22 @@ script forwards only the work-companion JSON payload through
 the other Claude sessions' terminal status lines. CCF sets `CCF_HOSTED_COMPANION=1` in its
 PTY; the dotfiles script checks that marker and the companion cwd, forwards the JSON, then
 prints nothing. This removes only the custom status rows in the CCF-hosted companion.
-Claude's native prompt and built-in footer remain: interactive mode has no documented
-switch to hide those. See the [status-line documentation](https://code.claude.com/docs/en/statusline)
-and [CLI reference](https://code.claude.com/docs/en/cli-reference).
+Interactive mode has no documented switch to hide Claude's native prompt (see the
+[status-line documentation](https://code.claude.com/docs/en/statusline) and
+[CLI reference](https://code.claude.com/docs/en/cli-reference)), so the conversation renderer
+drops it from the serialized viewport instead: `hideClaudePromptBox()` in
+`renderer/companion-terminal.js` removes the blank spacer, both rules and an empty `❯` row
+near the bottom. Anything else (dialogs, menus, real pending input) is drawn unchanged.
 The conversation and four-row status windows
 activate only for the work companion. The cat has no state/session badge or right-click panel;
 the tray and dashboard retain those controls.
+
+All three cluster windows use one explicit always-on-top level (`pop-up-menu`). Electron's
+default `floating` level re-inserts a window below the taskbar on every activation, and
+Windows drops the topmost bit whenever the taskbar is not topmost at that moment, which let
+a maximized app cover clicked panels. A 2-second watchdog restores any lost topmost bit and
+logs `Companion window lost always-on-top`. Focusing the cat raises the whole cluster; the
+toggle hotkey and the tray's "Bring Companion to Front" summon a buried cluster.
 
 Development runs use `services/design-reload.js` to watch renderer files with debounced
 filesystem events. CSS links swap after their replacements load; HTML and JavaScript saves

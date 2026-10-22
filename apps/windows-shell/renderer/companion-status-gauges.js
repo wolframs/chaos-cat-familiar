@@ -39,11 +39,16 @@ function localRunout(seconds) {
   return `${day} ${time}`;
 }
 
+// A window that has reset but not been used yet: Claude Code then sends the
+// old window (resets_at in the past) or no entry at all. Either way it is 0 %.
+const freshWindow = (label) => ({ label, value: "0%", bar: 0, tone: "green", detail: "", chips: [] });
+
 function limit(label, data, length, nowSeconds) {
   if (!finite(data?.used_percentage)) return null;
-  const used = clamp(data.used_percentage);
   const resetAt = finite(data.resets_at) ? Number(data.resets_at) : 0;
   const left = resetAt - nowSeconds;
+  if (resetAt && left <= 0) return freshWindow(label);
+  const used = clamp(data.used_percentage);
   const elapsed = length - left;
   const chips = [];
   let detail = left > 0 ? `↺ ${duration(left)}` : "";
@@ -111,7 +116,8 @@ export function companionGaugeRows(payload = {}, { nowMs = Date.now() } = {}) {
   }
   if (first.length) rows.push({ id: "context", segments: first });
 
-  const fiveHour = limit("5h", rate.five_hour, 18000, nowSeconds);
+  const fiveHour = limit("5h", rate.five_hour, 18000, nowSeconds)
+    ?? (finite(rate.seven_day?.used_percentage) ? freshWindow("5h") : null);
   if (fiveHour) rows.push({ id: "five-hour", segments: [fiveHour] });
 
   const sevenDay = limit("7d", rate.seven_day, 604800, nowSeconds);

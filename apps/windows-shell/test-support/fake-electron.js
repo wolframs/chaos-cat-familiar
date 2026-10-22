@@ -33,6 +33,10 @@ export class FakeBrowserWindow extends EventEmitter {
     this.minimized = false;
     this.maximized = false;
     this.title = options.title ?? "";
+    this.alwaysOnTop = Boolean(options.alwaysOnTop);
+    this.alwaysOnTopLevel = this.alwaysOnTop ? "floating" : null;
+    this.zOrderCalls = [];
+    this.focused = false;
     this.webContents = new FakeWebContents(this);
     FakeBrowserWindow.windowsByWebContents.set(this.webContents, this);
   }
@@ -53,7 +57,14 @@ export class FakeBrowserWindow extends EventEmitter {
     this.visible = false;
   }
 
-  focus() {}
+  focus() {
+    this.focused = true;
+    this.zOrderCalls.push({ call: "focus" });
+  }
+
+  isFocused() {
+    return this.focused;
+  }
 
   setBounds(bounds) {
     this.bounds = { ...this.bounds, ...bounds };
@@ -91,7 +102,17 @@ export class FakeBrowserWindow extends EventEmitter {
     return this.maximized;
   }
 
-  setAlwaysOnTop() {}
+  // Records z-order requests; isAlwaysOnTop mirrors Electron reading the real
+  // WS_EX_TOPMOST bit, so tests can simulate Windows demoting a window.
+  setAlwaysOnTop(flag, level = "floating") {
+    this.alwaysOnTop = Boolean(flag);
+    this.alwaysOnTopLevel = flag ? level : null;
+    this.zOrderCalls.push({ call: "setAlwaysOnTop", flag: Boolean(flag), level });
+  }
+
+  isAlwaysOnTop() {
+    return this.alwaysOnTop;
+  }
 
   setIgnoreMouseEvents(ignore) {
     this.ignoresMouseEvents = ignore;
@@ -101,7 +122,9 @@ export class FakeBrowserWindow extends EventEmitter {
     this.opacity = value;
   }
 
-  moveTop() {}
+  moveTop() {
+    this.zOrderCalls.push({ call: "moveTop" });
+  }
 
   close() {
     this.emit("close", {

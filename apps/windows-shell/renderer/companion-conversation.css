@@ -39,5 +39,9 @@ button { cursor: pointer; }
 .presence[data-phase="attention"]::before { background: #ffc170; }
 @keyframes pulse { 50% { opacity: .45; } }
 .console { flex: 1; min-height: 0; display: flex; flex-direction: column; padding: 12px; border-radius: 16px; background: #100d18; }
-.console-screen { flex: 1; min-height: 0; margin: 0; overflow: auto; white-space: pre; color: #ded6ea; font: var(--companion-text-size, 14px)/1.45 "CaskaydiaCove NF", "Cascadia Code", Consolas, monospace; font-variant-ligatures: none; }
+.console-screen { flex: 1; min-height: 0; margin: 0; overflow: auto; white-space: pre; color: #ded6ea; font: var(--companion-text-size, 14px)/1.2 "CaskaydiaCove NF", "Cascadia Code", Consolas, monospace; font-variant-ligatures: none; }
+/* Inline runs paint their background only over the font's content area, not the line box, so shaded
+   rows (diffs, the user's prompt) showed stripes between lines. An inline-block run is exactly one line
+   box tall and still sits on the baseline. 1.2 is a terminal's usual cell height (Windows Terminal). */
+.console-screen span[style*="background"] { display: inline-block; }
 @media (max-width: 590px) { .hint { display: none; } }

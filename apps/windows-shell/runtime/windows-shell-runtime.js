@@ -22,6 +22,8 @@ import { findCcfProtocolArg, parseCcfProtocolUrl } from "../services/ccf-protoco
 import { detectRuntimeMode } from "../services/runtime-mode.js";
 import { PerformanceSampler } from "../services/performance-sampler.js";
 import { RuntimeLogger } from "../services/runtime-logger.js";
+import { RuntimeRunMarker } from "../services/runtime-run-marker.js";
+import { OverlayPlacementPersistence } from "../services/overlay-placement-persistence.js";
 import { normalizeShellMode, overlayWindowSizeForMode } from "../services/overlay-shell-mode.js";
 import { placeCompanionCluster } from "../services/companion-cluster-layout.js";
 import { CompanionSession } from "../services/companion-session.js";
@@ -321,6 +323,13 @@ export function createWindowsShellRuntime({
   let hookServer = null;
   let controller = null;
   let settingsStore = null;
+  let stateStore = null;
+  let runMarker = null;
+  let placementPersistence = null;
+  let overlayDragSettings = null;
+  let applyingOverlayBounds = false;
+  let lastKnownSettings = {};
+  let fatalErrorShown = false;
   let runtimePaths = null;
   let logger = null;
   let performanceSampler = null;
@@ -344,16 +353,17 @@ export function createWindowsShellRuntime({
 
   function currentSettings() {
     const settings = settingsStore?.load?.() ?? {};
-    return {
+    lastKnownSettings = {
       ...settings,
       appShellMode: normalizeShellMode(runtimePaths?.appModeOverride ?? settings.appShellMode)
     };
+    return lastKnownSettings;
   }
 
-  function companionSnapshot() {
+  function companionSnapshot(changeSnapshot) {
     const snapshot = runtimePaths?.testMode && companionPreviewSnapshot
       ? companionPreviewSnapshot
-      : companionSession?.getSnapshot?.() ?? null;
+      : changeSnapshot ?? companionSession?.getSnapshot?.() ?? null;
     return snapshot ? { ...snapshot, attachments: companionAttachments?.list() ?? [] } : null;
   }
 
@@ -384,14 +394,13 @@ export function createWindowsShellRuntime({
     };
   }
 
-  function mascotModeEnabled() {
-    return currentSettings().appShellMode === "mascot";
+  function mascotModeEnabled(settings = currentSettings()) {
+    return settings.appShellMode === "mascot";
   }
 
-  function syncOverlayHudWindows() {
+  function syncOverlayHudWindows(settings = overlayDragSettings ?? currentSettings()) {
     if (!overlayWindow) return;
-    const settings = currentSettings();
-    const canShow = overlayWindow.isVisible() && settings.overlayVisible !== false && mascotModeEnabled();
+    const canShow = overlayWindow.isVisible() && settings.overlayVisible !== false && mascotModeEnabled(settings);
     const bounds = overlayWindow.getBounds();
     const area = screen.getDisplayMatching(bounds).workArea;
     if (!canShow || !companionHudActive) {
@@ -413,8 +422,8 @@ export function createWindowsShellRuntime({
           if (["x", "y", "width", "height"].some((key) => current[key] !== nextBounds[key])) window.setBounds(nextBounds);
         }
         const revealing = !companionConversationWindow.isVisible() || !companionStatusWindow.isVisible();
-        companionConversationWindow.showInactive();
-        companionStatusWindow.showInactive();
+        if (!companionConversationWindow.isVisible()) companionConversationWindow.showInactive();
+        if (!companionStatusWindow.isVisible()) companionStatusWindow.showInactive();
         if (revealing) raiseCompanionCluster("show");
         startClusterTopmostWatch();
       } finally {
@@ -616,10 +625,26 @@ export function createWindowsShellRuntime({
   }
 
   function saveSettingsPatch(patch) {
+    if (Object.keys(patch).length === 2 && Object.hasOwn(patch, "overlayBounds")
+      && Object.hasOwn(patch, "overlayDisplayId")) {
+      return placementPersistence?.save(patch);
+    }
+    return writeSettingsPatch(patch);
+  }
+
+  function writeSettingsPatch(patch) {
     if (!settingsStore) {
       return;
     }
     const current = settingsStore.load();
+    // Electron's move/resize event and the bounds IPC can report the same placement.
+    // Read first so unrelated preferences edited outside CCF remain current.
+    if (Object.keys(patch).length === 2 && Object.hasOwn(patch, "overlayBounds")
+      && Object.hasOwn(patch, "overlayDisplayId") && current.overlayBounds && patch.overlayBounds
+      && current.overlayDisplayId === patch.overlayDisplayId
+      && ["x", "y", "width", "height"].every((key) => current.overlayBounds[key] === patch.overlayBounds[key])) {
+      return;
+    }
     settingsStore.save({
       ...current,
       ...patch,
@@ -753,7 +778,7 @@ export function createWindowsShellRuntime({
   }
 
   function persistOverlayPlacement() {
-    if (!overlayWindow || !settingsStore) {
+    if (!overlayWindow || !settingsStore || applyingOverlayBounds) {
       return;
     }
     const bounds = overlayWindow.getBounds();
@@ -788,8 +813,10 @@ export function createWindowsShellRuntime({
       });
     });
     listen(window.webContents, "render-process-gone", (_event, details) => {
+      if (window === overlayWindow) finishOverlayDrag();
       logger?.error("renderer", `${name} render process gone`, details);
     });
+    if (window === overlayWindow) listen(window.webContents, "did-start-loading", finishOverlayDrag);
     listen(window.webContents, "unresponsive", () => {
       logger?.warn("renderer", `${name} became unresponsive`);
     });
@@ -1007,6 +1034,7 @@ export function createWindowsShellRuntime({
 
   function broadcastSettings() {
     const payload = currentSettings();
+    if (overlayDragSettings) overlayDragSettings = payload;
     overlayWindow?.webContents.send("ccf:settings", payload);
     dashboardWindow?.webContents.send("ccf:settings", payload);
     diagnosticsWindow?.webContents.send("ccf:settings", payload);
@@ -1313,7 +1341,7 @@ export function createWindowsShellRuntime({
   function wireIpc() {
     ipcMain.handle("ccf:get-state", () => snapshotRuntime().state);
     ipcMain.handle("ccf:get-settings", () => currentSettings());
-    ipcMain.handle("ccf:get-companion", companionSnapshot);
+    ipcMain.handle("ccf:get-companion", () => companionSnapshot());
     ipcMain.handle("ccf:get-companion-status", () => companionStatus);
     ipcMain.handle("ccf:companion-action", async (_event, payload) => {
       if (!companionSession || !payload || typeof payload !== "object") throw new Error("Companion unavailable.");
@@ -1368,7 +1396,10 @@ export function createWindowsShellRuntime({
     ipcMain.handle("ccf:get-mascot-library", () => mascotLibrary.list());
     ipcMain.handle("ccf:get-log-metadata", () => ({
       ...logger?.status(),
-      performance: performanceSampler?.snapshot() ?? null
+      performance: performanceSampler?.snapshot() ?? null,
+      persistence: stateStore?.status() ?? null,
+      placement: placementPersistence?.status() ?? null,
+      recovery: runMarker?.status() ?? null
     }));
     ipcMain.handle("ccf:notification-action", (_event, { action, id }) => {
       switch (action) {
@@ -1602,20 +1633,45 @@ export function createWindowsShellRuntime({
       if (!overlayWindow || !payload || typeof payload !== "object") {
         return;
       }
+      if (payload.dragging === true && !overlayDragSettings) {
+        try { overlayDragSettings = currentSettings(); }
+        catch (error) {
+          overlayDragSettings = lastKnownSettings;
+          logger.warn("placement", "Using cached preferences for drag; settings could not be read", { error: String(error?.message ?? error) });
+        }
+        placementPersistence.beginDrag();
+      }
+      const settings = overlayDragSettings ?? currentSettings();
       const currentBounds = overlayWindow.getBounds();
-      const nextBounds = {
+      let nextBounds = {
         x: Number.isFinite(payload.x) ? payload.x : currentBounds.x,
         y: Number.isFinite(payload.y) ? payload.y : currentBounds.y,
         width: Number.isFinite(payload.width) ? payload.width : currentBounds.width,
         height: Number.isFinite(payload.height) ? payload.height : currentBounds.height
       };
-      overlayWindow.setBounds(nextBounds, false);
+      // Apply the cluster constraint before moving the cat, never move out then
+      // correct it in a native move callback (which visibly bounces at edges).
+      if (companionHudActive && overlayWindow.isVisible() && settings.overlayVisible !== false && mascotModeEnabled(settings)) {
+        nextBounds = placeCompanionCluster({ cat: nextBounds, workArea: screen.getDisplayMatching(nextBounds).workArea }).cat;
+      }
+      if (["x", "y", "width", "height"].some((key) => currentBounds[key] !== nextBounds[key])) {
+        applyingOverlayBounds = true;
+        try { overlayWindow.setBounds(nextBounds, false); }
+        finally { applyingOverlayBounds = false; }
+      }
       saveSettingsPatch({
         overlayBounds: nextBounds,
         overlayDisplayId: screen.getDisplayMatching(nextBounds)?.id ?? null
       });
-      syncOverlayHudWindows();
+      syncOverlayHudWindows(settings);
+      if (payload.dragging === false) finishOverlayDrag();
     });
+  }
+
+  function finishOverlayDrag() {
+    if (!overlayDragSettings) return;
+    overlayDragSettings = null;
+    placementPersistence?.endDrag();
   }
 
   function runHookOperation(operation) {
@@ -1711,6 +1767,9 @@ export function createWindowsShellRuntime({
       processes: app.getAppMetrics?.() ?? [],
       logging: logger?.status(),
       performance: performanceSampler?.snapshot(),
+      persistence: stateStore?.status(),
+      placement: placementPersistence?.status(),
+      recovery: runMarker?.status(),
       latestEventAt: state.events[0]?.timestamp ?? null,
       activeSessionCount: state.sessions.filter((item) => item.status === "active").length,
       pendingApprovalCount: state.approvals.length,
@@ -1858,22 +1917,61 @@ export function createWindowsShellRuntime({
       } catch {}
       tray = null;
 
-      try {
-        controller?.persistState?.();
-      } catch {}
-
       removeRuntimeMetadata();
       started = false;
-    })();
+    })().then(() => {
+      finishPersistence(!["uncaughtException", "unhandledRejection", "bootstrap-failure"].includes(reason));
+    }, (error) => {
+      finishPersistence(false);
+      throw error;
+    });
 
     return stoppingPromise;
   }
 
+  function finishPersistence(cleanExit) {
+    const placementSaved = placementPersistence?.close() !== false;
+    let stateSaved = true;
+    try { controller?.persistState?.(); }
+    catch (error) {
+      stateSaved = false;
+      logger?.error("persistence", "Final state snapshot failed", { error: String(error?.message ?? error) });
+    }
+    try { stateSaved = stateStore?.close() !== false && stateSaved; }
+    catch (error) {
+      stateSaved = false;
+      logger?.error("persistence", "Final state flush failed", { error: String(error?.message ?? error) });
+    }
+    const logsSaved = logger?.close() !== false;
+    // A fatal exit or failed final write must remain visible on the next launch.
+    if (cleanExit && stateSaved && logsSaved && placementSaved) runMarker?.markClean();
+    process.off("exit", flushPendingOnExit);
+  }
+
+  function flushPendingOnExit() {
+    // Synchronous best effort only; abrupt exit never marks this run clean.
+    placementPersistence?.flush({ retry: false, force: true });
+    stateStore?.flush();
+    logger?.flush();
+  }
+
+  function showFatalError() {
+    if (fatalErrorShown || runtimePaths?.testMode) return;
+    fatalErrorShown = true;
+    try {
+      dialog?.showErrorBox?.("Chaos Cat Familiar stopped unexpectedly",
+        `CCF encountered an unexpected error and needs to close. You can restart it.\n\nDetails were written to:\n${logger?.filePath ?? "the CCF log"}`);
+    } catch { /* A notification failure must not interrupt crash cleanup. */ }
+  }
+
   function installProcessHandlers() {
+    // Keep this listener through asynchronous shutdown, past cleanupFns removal.
+    process.on("exit", flushPendingOnExit);
     onWithCleanup(process, "uncaughtException", (error) => {
       logger?.error("process", "uncaughtException", {
         error: String(error?.stack ?? error?.message ?? error)
       });
+      showFatalError();
       stop("uncaughtException").finally(() => {
         app.exit(1);
       });
@@ -1883,6 +1981,7 @@ export function createWindowsShellRuntime({
       logger?.error("process", "unhandledRejection", {
         error: String(error?.stack ?? error?.message ?? error)
       });
+      showFatalError();
       stop("unhandledRejection").finally(() => {
         app.exit(1);
       });
@@ -1960,9 +2059,19 @@ export function createWindowsShellRuntime({
     });
     logger = new RuntimeLogger({
       limit: 1000,
-      filePath: runtimePaths.logPath
+      filePath: runtimePaths.logPath,
+      flushDelayMs: 250,
+      timers
     });
     logger.configure({ debugLogging: initialSettings.debugLogging === true });
+    placementPersistence = new OverlayPlacementPersistence({ save: writeSettingsPatch, logger, timers });
+    runMarker = new RuntimeRunMarker({ filePath: path.join(runtimePaths.root, "run-marker.json"), pid: processLike.pid });
+    const recovery = runMarker.start();
+    if (recovery.previousUncleanExit) {
+      logger.warn("recovery", "Previous run ended uncleanly; loading the last atomic state checkpoint. Recent buffered history may be missing.",
+        { previousRun: recovery.previousRun });
+    }
+    if (recovery.lastError) logger.warn("recovery", "Run marker unavailable", { error: recovery.lastError });
     performanceSampler = new PerformanceSampler({ app, logger, getCounts: () => ({
       windows: BrowserWindow.getAllWindows?.().length ?? 0,
       sessions: controller?.sessions?.sessions?.length ?? 0,
@@ -1986,7 +2095,7 @@ export function createWindowsShellRuntime({
       directory: path.join(runtimePaths.root, "companion-attachments")
     });
     onWithCleanup(companionSession, "change", (snapshot) => {
-      companionConversationWindow?.webContents.send("ccf:companion", companionSnapshot());
+      companionConversationWindow?.webContents.send("ccf:companion", companionSnapshot(snapshot));
     });
 
     createWindows();
@@ -2015,6 +2124,13 @@ export function createWindowsShellRuntime({
       logger
     );
 
+    stateStore = new FileJsonStateStore(runtimePaths.statePath, {
+      events: [], notifications: [], sessions: [], settings: settingsStore.load()
+    }, { flushDelayMs: 250, timers, logger,
+      onError: (error) => logger.error("persistence", "State checkpoint failed; latest state remains in memory", {
+        error: String(error?.message ?? error)
+      })
+    });
     controller = new CcfCoreController({
       overlay: new ElectronOverlayService(
         () => overlayWindow,
@@ -2030,15 +2146,7 @@ export function createWindowsShellRuntime({
           ? { ...settingsStore.load().notifications, enabled: false }
           : settingsStore.load().notifications
       ),
-      stateStore: new FileJsonStateStore(
-        runtimePaths.statePath,
-        {
-          events: [],
-          notifications: [],
-          sessions: [],
-          settings: settingsStore.load()
-        }
-      ),
+      stateStore,
       settings: settingsStore,
       activation: services.activation ?? new ElectronActivationService(shell, logger),
       terminalLocator: services.terminalLocator ?? {},

@@ -34,6 +34,103 @@ function screenWhen(session, expected) {
   });
 }
 
+function publicationTimers() {
+  let next = 0;
+  const callbacks = new Map();
+  return {
+    setTimeout(callback, delay) { assert.equal(delay, 33); callbacks.set(++next, callback); return next; },
+    clearTimeout(id) { callbacks.delete(id); },
+    get pending() { return callbacks.size; },
+    flush() { const work = [...callbacks.values()]; callbacks.clear(); for (const callback of work) callback(); }
+  };
+}
+
+test("a burst parses immediately but publishes one screen per frame and retains the final burst on exit", async () => {
+  const pty = new FakePty();
+  const timers = publicationTimers();
+  const session = new CompanionSession({ repoPath: "C:\\companion", ptyFactory: async () => pty,
+    existingSessionProbe: async () => null, timers });
+  const snapshots = [];
+  session.on("change", (snapshot) => snapshots.push(snapshot));
+  await session.start({ userInitiated: true });
+  snapshots.length = 0;
+  for (let index = 0; index < 120; index++) pty.emit("data", `\r\x1b[2Kchunk ${index}`);
+  await new Promise((resolve) => session.terminal.write("", resolve));
+  assert.equal(session.terminal.buffer.active.getLine(0).translateToString(true), "chunk 119", "parser runs before publication");
+  assert.equal(snapshots.length, 0);
+  assert.equal(timers.pending, 1);
+  timers.flush();
+  assert.equal(snapshots.length, 1, "120 PTY chunks need one snapshot, not 120");
+  assert.equal(snapshots[0].terminal.screen, "chunk 119");
+  const revision = snapshots[0].terminal.revision;
+  pty.emit("data", "\x1b[6n");
+  await new Promise((resolve) => session.terminal.write("", resolve));
+  assert.ok(pty.writes.some((value) => /^\x1b\[\d+;\d+R$/.test(value)), "terminal query responses never wait for a publication frame");
+  session.updatePresentation({ phase: "attention", pendingPrompt: { kind: "approval", label: "Choose" } });
+  assert.equal(snapshots.at(-1).pendingPrompt.label, "Choose", "attention metadata publishes immediately");
+  assert.equal(snapshots.at(-1).terminal.revision, revision);
+  pty.emit("data", "\r\x1b[2K\x1b[31mFinal bytes\x1b[0m");
+  await session.stop();
+  assert.equal(snapshots.at(-1).connected, false);
+  assert.equal(snapshots.at(-1).terminal.screen, "Final bytes", "exit drains writes accepted before PTY termination");
+  assert.equal(snapshots.at(-1).terminal.lines[0][0].foreground, "#cd3131");
+  assert.ok(snapshots.at(-1).terminal.revision > revision);
+  assert.equal(timers.pending, 0);
+});
+
+test("resize publishes reflow without another PTY chunk and stale frame callbacks cannot repaint a restarted session", async () => {
+  const timers = publicationTimers();
+  const first = new FakePty();
+  const second = new FakePty();
+  let spawns = 0;
+  const session = new CompanionSession({ repoPath: "C:\\companion", ptyFactory: async () => ++spawns === 1 ? first : second,
+    existingSessionProbe: async () => null, timers });
+  await session.start({ userInitiated: true });
+  first.emit("data", `${"A".repeat(60)}\r\n`);
+  await new Promise((resolve) => session.terminal.write("", resolve));
+  timers.flush();
+  const before = session.getSnapshot().terminal.revision;
+  session.resize(20, 5);
+  assert.equal(timers.pending, 1);
+  timers.flush();
+  assert.equal(session.getSnapshot().terminal.lines.length, 3);
+  assert.ok(session.getSnapshot().terminal.revision > before);
+  first.emit("data", "OLD");
+  await new Promise((resolve) => session.terminal.write("", resolve));
+  assert.equal(timers.pending, 1);
+  const stopping = session.stop();
+  const starting = session.start({ userInitiated: true });
+  await Promise.all([stopping, starting]);
+  second.emit("data", "NEW");
+  await new Promise((resolve) => session.terminal.write("", resolve));
+  timers.flush();
+  assert.equal(session.getSnapshot().terminal.screen, "NEW");
+  assert.equal(session.getSnapshot().connected, true);
+  await session.stop();
+});
+
+test("stop cancels a pending factory and cannot leave a newly spawned PTY alive", async () => {
+  const pty = new FakePty();
+  let release;
+  let factoryEntered;
+  const entered = new Promise((resolve) => { factoryEntered = resolve; });
+  const session = new CompanionSession({ repoPath: "C:\\companion", existingSessionProbe: async () => null,
+    ptyFactory: async () => { factoryEntered(); return new Promise((resolve) => { release = () => resolve(pty); }); } });
+  const starting = session.start({ userInitiated: true });
+  await entered;
+  const stopping = session.stop();
+  release();
+  let timeout;
+  try {
+    await Promise.race([Promise.all([starting, stopping]), new Promise((_, reject) => {
+      timeout = setTimeout(() => reject(new Error("pending start did not settle after factory resolution")), 500);
+    })]);
+    assert.equal(pty.killed, true);
+    assert.equal(session.getSnapshot().connected, false);
+    assert.equal(session.terminal, null);
+  } finally { clearTimeout(timeout); await session.stop(); }
+});
+
 test("launch spec runs the existing companion's Inner path without a terminal tab", () => {
   const spec = companionLaunchSpec("C:\\Users\\dev\\repos\\work-companion");
   assert.equal(spec.file, "pwsh.exe");

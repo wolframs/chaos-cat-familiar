@@ -7,7 +7,7 @@ const elements = Object.fromEntries(["title", "presence", "start", "prompt", "dr
   .map((id) => [id, document.getElementById(id)]));
 const phaseLabels = { idle: "Ready", working: "Working", attention: "Needs input", offline: "Offline" };
 let snapshot = normalizeCompanionSnapshot(null);
-let terminalKey = "";
+let terminalRevision = null;
 let busy = false;
 let receivedPush = false;
 let resizeTimer;
@@ -68,16 +68,22 @@ function render() {
     screen: snapshot.messages.map((message) => message.text).join("\n\n")
       || (snapshot.connected ? "Starting the companion…" : "Start the companion to begin.")
   };
-  const key = JSON.stringify([terminal.screen, terminal.lines, terminal.history]);
-  if (key !== terminalKey) {
-    terminalKey = key;
+  const revision = Number.isSafeInteger(terminal.revision) ? terminal.revision : null;
+  if (revision === null || revision !== terminalRevision) {
+    terminalRevision = revision;
     const scroller = elements.consoleScreen;
     const followsOutput = scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight < 40;
     const readingPosition = scroller.scrollTop;
+    const lineHeight = parseFloat(getComputedStyle(scroller).lineHeight) || 1;
+    const readingAnchor = followsOutput ? null : scroller.children[Math.floor(readingPosition / lineHeight)];
+    const anchorTop = readingAnchor?.getBoundingClientRect().top;
     // The composer below replaces Claude's own input box; see hideClaudePromptBox.
-    renderCompanionTerminal(scroller, terminal.lines ? { ...terminal, lines: hideClaudePromptBox(terminal.lines) } : terminal);
-    if (followsOutput) scroller.scrollTop = scroller.scrollHeight;
-    else scroller.scrollTop = readingPosition;
+    const changed = renderCompanionTerminal(scroller, terminal.lines ? { ...terminal, lines: hideClaudePromptBox(terminal.lines) } : terminal);
+    if (changed) {
+      if (followsOutput) scroller.scrollTop = scroller.scrollHeight;
+      else if (readingAnchor?.parentNode === scroller) scroller.scrollTop += readingAnchor.getBoundingClientRect().top - anchorTop;
+      else scroller.scrollTop = readingPosition;
+    }
   }
   renderAttachments();
   updateButtons();
@@ -211,7 +217,7 @@ elements.consoleScreen.addEventListener("click", () => {
 });
 window.ccf?.onCompanion?.((value) => {
   receivedPush = true;
-  snapshot = normalizeCompanionSnapshot(value);
+  snapshot = normalizeCompanionSnapshot(value, snapshot);
   render();
 });
 
@@ -223,6 +229,6 @@ window.addEventListener("beforeunload", () => { clearTimeout(resizeTimer); obser
 render();
 window.ccf?.getCompanion?.().then((value) => {
   if (receivedPush) return;
-  snapshot = normalizeCompanionSnapshot(value);
+  snapshot = normalizeCompanionSnapshot(value, snapshot);
   render();
 }).catch(showError);

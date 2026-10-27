@@ -4,6 +4,7 @@ import path from "node:path";
 import test, { after } from "node:test";
 import assert from "node:assert/strict";
 import http from "node:http";
+import net from "node:net";
 import {
   createWindowsShellRuntime
 } from "../runtime/windows-shell-runtime.js";
@@ -549,9 +550,11 @@ test("companion HUDs anchor to the cat and test mode cannot start Claude", async
   const replies = [];
   const sent = [];
   let failSend = false;
+  let snapshotReads = 0;
+  let companionChanged;
   const companionSession = {
-    getSnapshot: () => ({ connected, phase: connected ? "idle" : "offline", title: "Work companion", messages: [], terminal: {} }),
-    on() {},
+    getSnapshot: () => { snapshotReads += 1; return { connected, phase: connected ? "idle" : "offline", title: "Work companion", messages: [], terminal: {} }; },
+    on(event, handler) { if (event === "change") companionChanged = handler; },
     recordAssistantMessage: (text, options) => replies.push({ text, options }),
     async start() { starts += 1; },
     resize(cols, rows) { sizes.push({ cols, rows }); },
@@ -605,6 +608,35 @@ test("companion HUDs anchor to the cat and test mode cannot start Claude", async
     const queued = (await electron.ipcMain.invoke("ccf:get-companion")).attachments[0];
     assert.ok(queued.path.startsWith(root));
     assert.ok(fs.existsSync(queued.path));
+    // Clear the fixture override while retaining the visible, fake HUD windows.
+    const clearPreview = await fetch(`http://127.0.0.1:${started.runtime.controlPort}/companion-preview`, {
+      method: "POST", headers: { "content-type": "application/json", "x-ccf-test-token": "fixture" },
+      body: "null"
+    });
+    assert.equal(clearPreview.status, 200);
+    const queried = await electron.ipcMain.invoke("ccf:get-companion");
+    assert.equal(queried.title, "Work companion", "IPC queries return session state rather than the Electron event");
+    assert.equal(Object.hasOwn(queried, "sender"), false);
+    const queriedWithEvent = await electron.ipcMain.handlers.get("ccf:get-companion")({ sender: { id: "electron-event-marker" } });
+    assert.equal(queriedWithEvent.title, "Work companion");
+    assert.equal(Object.hasOwn(queriedWithEvent, "sender"), false, "Electron event details never become companion state");
+    const changed = { connected: true, phase: "working", title: "Fresh output", messages: [],
+      terminal: { screen: "Latest PTY output", lines: [[{ text: "Latest PTY output" }]], history: [] } };
+    const readsBeforeChange = snapshotReads;
+    companionChanged(changed);
+    const pushed = conversation.webContents.sent.at(-1);
+    assert.equal(pushed.channel, "ccf:companion");
+    assert.equal(pushed.payload.title, changed.title, "push uses the already captured change snapshot");
+    assert.equal(pushed.payload.terminal, changed.terminal);
+    assert.equal(pushed.payload.attachments[0].id, queued.id, "pending attachments decorate the change snapshot");
+    assert.equal(snapshotReads, readsBeforeChange, "PTY updates do not read and clone a second snapshot");
+    const restorePreview = await fetch(`http://127.0.0.1:${started.runtime.controlPort}/companion-preview`, {
+      method: "POST", headers: { "content-type": "application/json", "x-ccf-test-token": "fixture" },
+      body: JSON.stringify({ connected: true, phase: "idle", title: "Fixture preview", messages: [], terminal: {} })
+    });
+    assert.equal(restorePreview.status, 200);
+    companionChanged(changed);
+    assert.equal(conversation.webContents.sent.at(-1).payload.title, "Fixture preview", "test preview still overrides live changes");
     failSend = true;
     await assert.rejects(electron.ipcMain.invoke("ccf:companion-action", { action: "send", text: "Look at this", attachmentIds: [queued.id] }), /PTY failure/);
     assert.equal((await electron.ipcMain.invoke("ccf:get-companion")).attachments.length, 1, "failed send retains the image");
@@ -807,7 +839,7 @@ test("cleanup actions remove only CCF-owned files and toast state appears for co
   await runtime.stop();
 });
 
-test("settings update that changes the port restarts the hook server and repairs hooks", async () => {
+test("settings update that changes the port restarts the hook server and repairs hooks", async (t) => {
   const root = makeTempDir();
   const home = path.join(root, "home");
   const appData = path.join(root, "appdata");
@@ -850,9 +882,17 @@ test("settings update that changes the port restarts the hook server and repairs
     }
   });
 
-  const started = await runtime.start();
-  const initialPort = started.runtime.hookPort;
-  const nextPort = initialPort + 10;
+  t.after(() => runtime.stop());
+  await runtime.start();
+  // Nearby ports can be excluded/reserved by Windows even when the OS-assigned
+  // initial port was available. Ask the OS for another usable port instead.
+  const probe = net.createServer();
+  await new Promise((resolve, reject) => {
+    probe.once("error", reject);
+    probe.listen(0, "127.0.0.1", resolve);
+  });
+  const nextPort = probe.address().port;
+  await new Promise((resolve, reject) => probe.close((error) => error ? reject(error) : resolve()));
 
   const updated = await electron.ipcMain.invoke("ccf:update-settings", {
     port: nextPort
@@ -954,7 +994,8 @@ test("Electron's repeated dev security warning stays out of the console and log"
   const warning = "%cElectron Security Warning (Insecure Content-Security-Policy) font-weight: bold; This renderer process has either no Content Security Policy set";
   for (let reload = 0; reload < 3; reload += 1) cat.webContents.emit("console-message", {}, 2, warning, 1, "electron/js2c/renderer_init");
   cat.webContents.emit("console-message", {}, 1, "mascot ready", 10, "overlay.js");
-  // The console receives exactly the lines the log file gets.
+  // Buffered info messages reach disk on orderly shutdown.
+  await runtime.stop();
   const log = fs.readFileSync(path.join(root, "chaos-cat-familiar", "logs", "chaos-cat-familiar.log"), "utf8");
   assert.equal(log.includes("Security Warning"), false);
   assert.match(log, /overlay: mascot ready/, "other renderer output still reaches the log");

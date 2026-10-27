@@ -1,9 +1,17 @@
 # Status
 
-As of 2026-10-20. Dev-run only: no installer, no packaged build has been tested.
+As of 2026-10-27. Dev-run only: no installer, no packaged build has been tested.
 
 ## Where it stands
 
+- Mascot dragging saves its position on release, keeping settings file I/O out of
+  movement frames. Cluster bounds are calculated before moving the windows, avoiding
+  edge bounce. Temporary settings-file locks retain and retry the latest position
+  instead of closing CCF; fatal JavaScript errors show a dialog with the log path.
+- State checkpoints and ordinary file logs batch over 250 ms, with bounded log buffers
+  and an unclean-run marker. Terminal snapshots coalesce over 33 ms; the renderer
+  retains unchanged rows and scrollback instead of rebuilding them on each update.
+- The full serial test suite passes 302 tests; the isolated Electron smoke test passes.
 - Core (`packages/core`): hook server, sessions, approvals, notification routing. Covered by automated tests; real Claude-session validation remains outstanding.
 - Shell (`apps/windows-shell`): tray, overlay, dashboard, diagnostics, mascots. Claude Code
   only; Codex and Copilot support was cut on 2026-10-16. Runs with `npm run start:windows-shell`.

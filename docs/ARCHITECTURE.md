@@ -81,6 +81,11 @@ from session storage. The main process owns the PTY, transcript and latest statu
 Packaged builds do not watch files. Preload and backend changes still need a restart.
 The headless terminal also serializes ANSI cell styles through `services/terminal-screen.js`;
 the renderer builds safe coloured spans instead of discarding colours from the screen.
+PTY bytes enter the parser immediately; terminal snapshots are coalesced on a 33 ms timer.
+Exit waits for accepted parser writes before publishing the final screen. Snapshot revisions let
+metadata-only updates reuse normalized terminal rows, while older full snapshots remain supported.
+The renderer retains unchanged DOM rows, including shifted scrollback, instead of rebuilding the
+entire conversation for a spinner repaint. There is no cache keyed by xterm's disposable line wrappers.
 
 `services/terminal-screen.js` also serializes up to 1,000 scrollback rows. The renderer follows
 new output only when already near the bottom. The companion launcher sets

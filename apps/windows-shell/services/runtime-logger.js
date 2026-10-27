@@ -73,7 +73,8 @@ function formatLine(entry) {
 }
 
 export class RuntimeLogger extends InMemoryLogger {
-  constructor({ limit = 1000, filePath, stdout = console.log, stderr = console.error, maxFileBytes = DEFAULT_MAX_FILE_BYTES } = {}) {
+  constructor({ limit = 1000, filePath, stdout = console.log, stderr = console.error, maxFileBytes = DEFAULT_MAX_FILE_BYTES,
+    flushDelayMs = 0, maxBufferedBytes = 64 * 1024, timers = globalThis } = {}) {
     super(limit);
     this.filePath = filePath;
     this.stdout = stdout;
@@ -83,6 +84,14 @@ export class RuntimeLogger extends InMemoryLogger {
     this.lastWriteError = null;
     this.fileReady = false;
     this.currentBytes = 0;
+    this.flushDelayMs = Number.isFinite(flushDelayMs) && flushDelayMs > 0 ? flushDelayMs : 0;
+    this.maxBufferedBytes = Number.isSafeInteger(maxBufferedBytes) && maxBufferedBytes >= 2 ? maxBufferedBytes : 64 * 1024;
+    this.timers = timers;
+    this.buffer = [];
+    this.bufferedBytes = 0;
+    this.droppedLines = 0;
+    this.flushTimer = null;
+    this.closed = false;
   }
 
   configure({ debugLogging } = {}) {
@@ -90,7 +99,8 @@ export class RuntimeLogger extends InMemoryLogger {
   }
 
   status() {
-    return { filePath: this.filePath ?? null, debugLogging: this.debugLogging, lastWriteError: this.lastWriteError };
+    return { filePath: this.filePath ?? null, debugLogging: this.debugLogging, lastWriteError: this.lastWriteError,
+      bufferedBytes: this.bufferedBytes, droppedLines: this.droppedLines, closed: this.closed, flushDelayMs: this.flushDelayMs };
   }
 
   initializeFile() {
@@ -120,6 +130,68 @@ export class RuntimeLogger extends InMemoryLogger {
     this.currentBytes += bytes;
   }
 
+  appendSafely(fileLine) {
+    try {
+      this.appendLine(fileLine);
+    } catch (error) {
+      this.fileReady = false;
+      // Cleanup may remove the directory or file between entries. Reinitialize once.
+      if (error.code !== "ENOENT") throw error;
+      this.appendLine(fileLine);
+    }
+  }
+
+  flush() {
+    if (this.flushTimer !== null) this.timers.clearTimeout(this.flushTimer);
+    this.flushTimer = null;
+    try {
+      while (this.buffer.length) {
+        if (!this.fileReady) this.initializeFile();
+        // Fill the current file before rotating, without splitting a UTF-8 log line.
+        const remaining = this.maxFileBytes - this.currentBytes;
+        const budget = this.buffer[0].bytes > remaining ? this.maxFileBytes : remaining;
+        let count = 0;
+        let bytes = 0;
+        while (count < this.buffer.length && bytes + this.buffer[count].bytes <= budget) {
+          bytes += this.buffer[count++].bytes;
+        }
+        this.appendSafely(this.buffer.slice(0, count).map((item) => item.line).join(""));
+        this.buffer.splice(0, count);
+        this.bufferedBytes -= bytes;
+      }
+      this.lastWriteError = null;
+      return true;
+    } catch (error) {
+      this.fileReady = false;
+      this.lastWriteError = boundedText(error?.message ?? error, 1024);
+      // Keep unwritten lines bounded; only new activity or an explicit flush retries.
+      return false;
+    }
+  }
+
+  close() {
+    this.closed = true;
+    return this.flush();
+  }
+
+  enqueueLine(line, urgent) {
+    const bytes = Buffer.byteLength(line, "utf8");
+    // After an I/O failure, overflow must not retry the disk for every new entry.
+    // A single next-activity timer (or urgent/explicit flush) attempts recovery.
+    if (this.bufferedBytes + bytes > this.maxBufferedBytes && this.lastWriteError === null) this.flush();
+    while (this.bufferedBytes + bytes > this.maxBufferedBytes && this.buffer.length) {
+      this.bufferedBytes -= this.buffer.shift().bytes;
+      this.droppedLines++;
+    }
+    this.buffer.push({ line, bytes });
+    this.bufferedBytes += bytes;
+    if (urgent) return this.flush();
+    if (this.flushTimer === null) {
+      this.flushTimer = this.timers.setTimeout(() => this.flush(), this.flushDelayMs);
+      this.flushTimer?.unref?.();
+    }
+  }
+
   log(level, category, message, context = {}) {
     if (level === "debug" && !this.debugLogging) return;
     super.log(boundedText(level, 32), boundedText(category, 128), boundedText(message), normalizeContext(context));
@@ -132,20 +204,18 @@ export class RuntimeLogger extends InMemoryLogger {
       else this.stdout(line);
     } catch { /* A broken console must not interrupt app behavior or file logging. */ }
 
-    if (!this.filePath) {
+    if (!this.filePath || this.closed) {
       return;
     }
 
     try {
-      const fileLine = boundedFileLine(line, this.maxFileBytes);
-      try {
-        this.appendLine(fileLine);
-      } catch (error) {
-        this.fileReady = false;
-        // Cleanup may remove the directory or file between entries. Reinitialize once.
-        if (error.code !== "ENOENT") throw error;
-        this.appendLine(fileLine);
+      const fileLine = boundedFileLine(line, this.flushDelayMs
+        ? Math.min(this.maxFileBytes, this.maxBufferedBytes) : this.maxFileBytes);
+      if (this.flushDelayMs) {
+        this.enqueueLine(fileLine, level === "warn" || level === "error");
+        return;
       }
+      this.appendSafely(fileLine);
       this.lastWriteError = null;
     } catch (error) {
       this.fileReady = false;

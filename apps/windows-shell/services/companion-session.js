@@ -97,15 +97,21 @@ function sanitizeSubmission(text) {
 
 export class CompanionSession extends EventEmitter {
   constructor({ repoPath, ptyFactory = createNodePty,
-    existingSessionProbe = findExistingCompanionSession, now = () => new Date() } = {}) {
+    existingSessionProbe = findExistingCompanionSession, now = () => new Date(),
+    timers = { setTimeout, clearTimeout } } = {}) {
     super();
     this.spec = companionLaunchSpec(repoPath);
     this.ptyFactory = ptyFactory;
     this.existingSessionProbe = existingSessionProbe;
     this.now = now;
+    this.timers = timers;
+    this.publicationTimer = null;
+    this.closing = null;
+    this.terminalRevision = 0;
     this.pty = null;
     this.terminal = null;
     this.starting = null;
+    this.startAttempt = null;
     this.messageNumber = 0;
     this.seenAssistantEvents = new Set();
     this.disposables = [];
@@ -139,19 +145,25 @@ export class CompanionSession extends EventEmitter {
     if (!userInitiated) throw new Error("Starting Claude Code requires an explicit user action.");
     if (this.pty) return this.getSnapshot();
     if (this.starting) return this.starting;
-    this.starting = this.#start();
+    const attempt = { cancelled: false };
+    this.startAttempt = attempt;
+    this.starting = this.#start(attempt);
     try { return await this.starting; }
-    finally { this.starting = null; }
+    finally { this.starting = null; this.startAttempt = null; }
   }
 
-  async #start() {
+  async #start(attempt) {
+    if (this.closing) await this.closing;
+    if (attempt.cancelled) return this.getSnapshot();
     const existing = await this.existingSessionProbe(this.spec.cwd);
+    if (attempt.cancelled) return this.getSnapshot();
     if (existing) throw new Error(`Work companion is already running (PID ${existing.pid}).`);
     const pty = await this.ptyFactory(this.spec);
     if (!pty || typeof pty.write !== "function" || typeof pty.onData !== "function"
       || typeof pty.onExit !== "function") {
       throw new TypeError("The companion PTY adapter is invalid.");
     }
+    if (attempt.cancelled) { pty.kill(); return this.getSnapshot(); }
     this.pty = pty;
     this.terminal = new Terminal({
       cols: this.spec.cols, rows: this.spec.rows, scrollback: 1000,
@@ -162,11 +174,11 @@ export class CompanionSession extends EventEmitter {
     this.snapshot.liveText = "";
     this.snapshot.terminal = {
       needed: true, reason: "Interactive Claude Code session", screen: "", lines: [], history: [],
-      cursor: { row: 0, column: 0 }
+      cursor: { row: 0, column: 0 }, revision: ++this.terminalRevision
     };
     this.disposables = [
       pty.onData((chunk) => this.#onData(chunk)),
-      pty.onExit((event) => this.#onExit(event)),
+      pty.onExit((event) => this.#onExit(event, pty)),
       this.terminal.onData((response) => pty.write(response))
     ];
     this.#changed();
@@ -180,29 +192,50 @@ export class CompanionSession extends EventEmitter {
     const terminal = this.terminal;
     terminal.write(raw, () => {
       if (this.pty !== pty) return;
-      const state = readTerminalScreen(terminal);
-      this.snapshot.terminal.screen = state.screen;
-      this.snapshot.terminal.lines = state.lines;
-      this.snapshot.terminal.history = state.history;
-      this.snapshot.terminal.cursor = state.cursor;
-      this.#changed();
+      this.#schedulePublication(terminal, pty);
     });
     this.emit("data", raw);
   }
 
-  #onExit(event) {
-    if (!this.pty) return;
+  #captureTerminal(terminal) {
+    Object.assign(this.snapshot.terminal, readTerminalScreen(terminal), { revision: ++this.terminalRevision });
+  }
+
+  #schedulePublication(terminal = this.terminal, pty = this.pty) {
+    if (this.publicationTimer !== null || !terminal || !pty) return;
+    this.publicationTimer = this.timers.setTimeout(() => {
+      if (this.terminal !== terminal || this.pty !== pty) return;
+      this.publicationTimer = null;
+      this.#captureTerminal(terminal);
+      this.#changed();
+    }, 33);
+  }
+
+  #onExit(event, pty = this.pty) {
+    if (!pty || this.pty !== pty) return this.closing;
     this.pty = null;
+    if (this.publicationTimer !== null) this.timers.clearTimeout(this.publicationTimer);
+    this.publicationTimer = null;
     for (const disposable of this.disposables) disposable?.dispose?.();
     this.disposables = [];
-    this.terminal?.dispose();
-    this.terminal = null;
-    this.snapshot.connected = false;
-    this.snapshot.phase = "offline";
-    this.snapshot.pendingPrompt = null;
-    this.snapshot.terminal.needed = false;
-    this.emit("exit", event);
-    this.#changed();
+    const terminal = this.terminal;
+    // xterm writes are asynchronous. The barrier drains bytes accepted before
+    // exit, including callbacks not yet reached when ConPTY reported shutdown.
+    this.closing = new Promise((resolve) => terminal.write("", () => {
+      try {
+        this.#captureTerminal(terminal);
+        this.snapshot.connected = false;
+        this.snapshot.phase = "offline";
+        this.snapshot.pendingPrompt = null;
+        this.snapshot.terminal.needed = false;
+        this.emit("exit", event);
+        this.#changed();
+      } finally {
+        try { terminal.dispose(); }
+        finally { this.terminal = null; resolve(); }
+      }
+    }));
+    return this.closing;
   }
 
   #requirePty() {
@@ -284,12 +317,18 @@ export class CompanionSession extends EventEmitter {
     this.terminal?.resize(cols, rows);
     this.spec.cols = cols;
     this.spec.rows = rows;
+    this.#schedulePublication();
   }
 
   async stop() {
-    if (!this.pty) return;
+    if (this.starting) {
+      this.startAttempt.cancelled = true;
+      try { await this.starting; } catch { /* A failed start leaves no PTY to stop. */ }
+    }
+    if (!this.pty) return this.closing;
     const pty = this.pty;
     pty.kill();
-    if (this.pty === pty) this.#onExit({ exitCode: null, signal: "stopped" });
+    if (this.pty === pty) this.#onExit({ exitCode: null, signal: "stopped" }, pty);
+    await this.closing;
   }
 }

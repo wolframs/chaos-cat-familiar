@@ -14,6 +14,18 @@ each; older entries are discarded. No upload happens. Note the approximate time,
 and what you expected alongside the logs. Avoid Clear Mascot/Cache/Logs until evidence is collected.
 There is no need to copy the full state/settings files (which can contain tool data or credentials).
 
+Fatal main-process JavaScript errors show a dialog with the log path before shutdown;
+test mode suppresses dialogs. Native process termination can bypass this handler.
+Mascot dragging keeps its latest position in memory and saves on release, cancellation,
+capture loss, renderer reload/loss or orderly shutdown. Preferences are read once when
+dragging begins. Each final save rereads settings to preserve unrelated external edits.
+
+Temporary placement-save failures (`EPERM`, `EACCES`, `EBUSY`) retry after 250 ms, 1 s
+and 3 s. Pending movement replaces one queued position; it does not add disk traffic.
+Repeated errors are deduplicated. After the bounded retries, later movement or shutdown
+can retry. A permanently unwritable file leaves the last saved position on disk.
+Diagnostic metadata exposes `placement` pending/error status.
+
 ## What is recorded
 
 - Normal lifecycle, hook installation, approvals, window/renderer failures and activation attempts.
@@ -33,9 +45,31 @@ not a stack profiler; machine sleep and system load can increase it. Permission 
 include time waiting for the person to answer, so a long duration alone is not a performance fault.
 
 Turning profiling off or quitting removes its timer and CPU baseline. It launches no subprocesses,
-performs no stack/heap dumps and does no filesystem scanning. Debug logging uses bounded
-synchronous appends; directory/size metadata is cached to limit filesystem overhead. Logging or
-profiling failures are isolated from approval handling.
+performs no stack/heap dumps and does no filesystem scanning. File logs batch for up to 250 ms,
+subject to main-loop scheduling, with a 64 KiB pending buffer cap. Warnings/errors flush immediately;
+in-memory entries and console output remain immediate. Rotation still keeps two 2 MiB files.
+Directory/size metadata is cached. Disk failures keep a bounded buffer, expose dropped-line counts
+and do not start an idle retry loop. Logging/profiling failures remain isolated from approvals.
+
+## State checkpoints and unclean shutdowns
+
+Hook state is immediately visible in memory. Disk checkpoints coalesce over 250 ms,
+serializing the latest pending state through same-directory atomic replacement.
+Explicit settings changes still save immediately. Failed checkpoints retain the latest
+state in memory and the last valid disk checkpoint; later activity or shutdown can retry.
+Batched store `load()` reads the disk checkpoint rather than pending memory changes.
+
+`%APPDATA%\chaos-cat-familiar\run-marker.json` is written once at startup and removed
+only after orderly shutdown has flushed state, logs and pending placement. It uses no
+periodic heartbeat. A leftover marker produces a warning on the next launch; CCF loads
+the last valid checkpoint. Fatal errors, failed startup and failed final writes retain
+the marker. Malformed JSON uses the existing quarantine/recovery-note mechanism.
+Pending approvals are not replayed or automatically answered after a restart.
+
+An abrupt kill or power loss can lose the latest buffered history/logs; scheduling stalls
+can extend the nominal 250 ms window. The marker cannot reconstruct unwritten data.
+Diagnostic metadata includes `persistence` and `recovery`, alongside buffered bytes,
+dropped log lines and placement status. Local-data cleanup removes the marker/checkpoint.
 
 ## Isolated verification
 

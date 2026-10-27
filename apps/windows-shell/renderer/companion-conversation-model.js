@@ -1,12 +1,14 @@
 const ROLES = new Set(["user", "assistant", "system", "tool"]);
 const PHASES = new Set(["idle", "working", "attention", "offline"]);
 
-export function normalizeCompanionSnapshot(value) {
+export function normalizeCompanionSnapshot(value, previous) {
   const source = value && typeof value === "object" ? value : {};
   const connected = source.connected === true;
   const messages = Array.isArray(source.messages) ? source.messages : [];
   const terminal = source.terminal && typeof source.terminal === "object" ? source.terminal : {};
   const prompt = source.pendingPrompt && typeof source.pendingPrompt === "object" ? source.pendingPrompt : null;
+  const revision = Number.isSafeInteger(terminal.revision) && terminal.revision >= 0 ? terminal.revision : null;
+  const reusableTerminal = revision !== null && previous?.terminal?.revision === revision ? previous.terminal : null;
 
   return {
     attachments: Array.isArray(source.attachments) ? source.attachments.filter((image) => image
@@ -28,13 +30,14 @@ export function normalizeCompanionSnapshot(value) {
       label: typeof prompt.label === "string" ? prompt.label : "The companion needs input."
     } : null,
     terminal: {
+      revision,
       needed: terminal.needed === true,
       reason: typeof terminal.reason === "string" ? terminal.reason : "",
       screen: typeof terminal.screen === "string" ? terminal.screen : "",
-      lines: Array.isArray(terminal.lines) ? terminal.lines.map((runs) => Array.isArray(runs)
-        ? runs.filter((run) => run && typeof run.text === "string").map((run) => ({ ...run })) : []) : [],
-      history: Array.isArray(terminal.history) ? terminal.history.map((runs) => Array.isArray(runs)
-        ? runs.filter((run) => run && typeof run.text === "string").map((run) => ({ ...run })) : []) : []
+      lines: reusableTerminal?.lines ?? (Array.isArray(terminal.lines) ? terminal.lines.map((runs) => Array.isArray(runs)
+        ? runs.filter((run) => run && typeof run.text === "string").map((run) => ({ ...run })) : []) : []),
+      history: reusableTerminal?.history ?? (Array.isArray(terminal.history) ? terminal.history.map((runs) => Array.isArray(runs)
+        ? runs.filter((run) => run && typeof run.text === "string").map((run) => ({ ...run })) : []) : [])
     }
   };
 }

@@ -6,6 +6,7 @@ import { companionAttention, sessionIdentity, syncCompanionPlayback, syncCompani
 import { MascotStateMachine, mascotInputsFromState } from "../renderer/mascot-state-machine.js";
 import { defaultMascotConfig } from "../renderer/default-mascot-config.js";
 import { loadBundledMascots } from "../services/bundled-mascots.js";
+import { createMascotDrag } from "../renderer/mascot-drag.js";
 
 test("overlay settles static waiting and hidden states before resuming working media", async () => {
   const source = (await readFile(new URL("../renderer/overlay.js", import.meta.url), "utf8")).replace(/^import .*;\r?\n/gm, "");
@@ -22,7 +23,7 @@ test("overlay settles static waiting and hidden states before resuming working m
   const context = vm.createContext({
     document, window: { ccf: { onState() {}, onSettings() {}, onMascotLibrary() {}, getState() { return new Promise(() => {}); }, getSettings() { return new Promise(() => {}); }, getMascotLibrary() { return new Promise(() => {}); } }, addEventListener() {} },
     MascotStateMachine, mascotInputsFromState, companionAttention, sessionIdentity, syncCompanionPlayback, syncCompanionMedia,
-    defaultMascotConfig, setTimeout() {}, clearTimeout() {}, Date, console
+    createMascotDrag, defaultMascotConfig, setTimeout() {}, clearTimeout() {}, Date, console
   });
   vm.runInContext(source, context);
   vm.runInContext(`mascotLibrary = { mascots: [{ id: "test", name: "Test", config: defaultMascotConfig }] };`, context);
@@ -60,7 +61,7 @@ test("visible Chaos Cat animates Idle and Needs Attention and releases video whe
   const context = vm.createContext({
     document, window: { ccf: { onState() {}, onSettings() {}, onMascotLibrary() {}, getState() { return new Promise(() => {}); }, getSettings() { return new Promise(() => {}); }, getMascotLibrary() { return new Promise(() => {}); } }, addEventListener() {} },
     MascotStateMachine, mascotInputsFromState, companionAttention, sessionIdentity, syncCompanionPlayback, syncCompanionMedia,
-    setTimeout() {}, clearTimeout() {}, Date, console
+    createMascotDrag, setTimeout() {}, clearTimeout() {}, Date, console
   });
   vm.runInContext(source, context);
   const config = loadBundledMascots().find((item) => item.slug === "chaos-cat").config;
@@ -103,7 +104,7 @@ test("overlay uses hook updates without polling or process detection and pauses 
     onState(fn) { handlers.state = fn; }, onSettings() {}, onMascotLibrary() {}
   };
   vm.runInNewContext(source, {
-    document, window: { ccf, addEventListener() {} }, companionAttention, sessionIdentity, syncCompanionPlayback, syncCompanionMedia,
+    document, window: { ccf, addEventListener() {} }, companionAttention, sessionIdentity, syncCompanionPlayback, syncCompanionMedia, createMascotDrag,
     setTimeout(fn) { timers.add(fn); return fn; }, clearTimeout(fn) { timers.delete(fn); },
     setInterval() { throw new Error("idle polling must not return"); }, Date, console
   });

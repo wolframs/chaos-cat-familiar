@@ -71,3 +71,19 @@ test("an image-only draft can be sent and carries only staged image identifiers"
   assert.equal(snapshot.attachments[0].path, undefined);
   assert.equal(snapshot.terminal.history[0][0].text, "Earlier output");
 });
+
+test("a terminal revision reuses normalized rows for metadata updates but legacy snapshots still refresh", () => {
+  const terminal = { revision: 7, screen: "Red", lines: [[{ text: "Red", foreground: "#cd3131" }]], history: [] };
+  const first = normalizeCompanionSnapshot({ connected: true, terminal });
+  const metadata = normalizeCompanionSnapshot({ connected: true, phase: "attention", terminal: structuredClone(terminal) }, first);
+  assert.equal(metadata.terminal.revision, 7);
+  assert.equal(metadata.terminal.lines, first.terminal.lines);
+  assert.equal(metadata.terminal.history, first.terminal.history);
+  assert.equal(metadata.phase, "attention");
+  const fresh = normalizeCompanionSnapshot({ connected: true, terminal: { ...terminal, revision: 8, lines: [[{ text: "New" }]] } }, metadata);
+  assert.notEqual(fresh.terminal.lines, metadata.terminal.lines);
+  assert.equal(fresh.terminal.lines[0][0].text, "New");
+  const legacy = normalizeCompanionSnapshot({ connected: true, terminal: { screen: "Old backend", lines: [[{ text: "Old backend" }]] } }, fresh);
+  assert.equal(legacy.terminal.lines[0][0].text, "Old backend");
+  assert.equal(legacy.terminal.revision, null);
+});

@@ -310,6 +310,16 @@ async function main() {
     if ((await pendingResponse).status !== 204) throw new Error("Shutdown did not defer pending permission");
     await supervisor.waitForExit(30000);
     await ensureGone(runtimeMetadataPath);
+    const statePath = path.join(appData, "chaos-cat-familiar", "state.json");
+    const checkpoint = JSON.parse(fs.readFileSync(statePath, "utf8"));
+    if (!checkpoint.sessions?.some((session) => session.id === "shutdown-client")) {
+      throw new Error("Shutdown did not flush the latest state checkpoint");
+    }
+    if (fs.existsSync(path.join(appData, "chaos-cat-familiar", "run-marker.json"))) {
+      throw new Error("Successful shutdown left an unclean-run marker");
+    }
+    const finalLog = fs.readFileSync(path.join(appData, "chaos-cat-familiar", "logs", "chaos-cat-familiar.log"), "utf8");
+    if (!finalLog.includes("Stopping Windows shell runtime")) throw new Error("Shutdown log buffer was not flushed");
   } catch (error) {
     console.error(`[ccf-windows-smoke] Check failed: ${error.stack ?? error.message}`);
     await supervisor.killTree();

@@ -1,6 +1,7 @@
 import { MascotStateMachine, mascotInputsFromState } from "./mascot-state-machine.js";
 import { companionAttention, sessionIdentity, syncCompanionPlayback, syncCompanionMedia } from "./companion-attention.js";
 import { sessionActivationTarget } from "./session-activation.js";
+import { createMascotDrag } from "./mascot-drag.js";
 
 const approvalsRoot = document.getElementById("approvals");
 const status = document.getElementById("status");
@@ -40,8 +41,6 @@ let mascotVideoReady = false;
 let mascotVideoFallbackUrl = null;
 let lastMascotAttentionKind = null;
 let latestClaudeRuntime = null;
-let overlayDrag = null;
-let pendingOverlayDragFrame = null;
 let claudeRuntimeRefresh = { inFlight: null, lastLoadedAt: 0 };
 let stateExpiryTimer = null;
 
@@ -620,69 +619,15 @@ function mascotModeEnabled() {
   return latestSettings?.appShellMode === "mascot";
 }
 
-function flushOverlayDrag() {
-  if (!overlayDrag?.latestBounds) {
-    pendingOverlayDragFrame = null;
-    return;
-  }
-  window.ccf.setOverlayBounds(overlayDrag.latestBounds);
-  pendingOverlayDragFrame = null;
-}
-
-function queueOverlayDrag(bounds) {
-  if (!overlayDrag) {
-    return;
-  }
-  overlayDrag.latestBounds = bounds;
-  if (pendingOverlayDragFrame != null) {
-    return;
-  }
-  pendingOverlayDragFrame = requestAnimationFrame(flushOverlayDrag);
-}
-
-async function beginMascotDrag(event) {
-  if (event.button !== 0 || !mascotModeEnabled()) {
-    return;
-  }
-  const bounds = await window.ccf.getOverlayBounds();
-  if (!bounds) {
-    return;
-  }
-  overlayDrag = {
-    pointerId: event.pointerId,
-    startScreenX: event.screenX,
-    startScreenY: event.screenY,
-    startBounds: bounds,
-    latestBounds: bounds
-  };
-  document.body.classList.add("dragging");
-  mascotShell.setPointerCapture(event.pointerId);
-}
-
-function updateMascotDrag(event) {
-  if (!overlayDrag || event.pointerId !== overlayDrag.pointerId) {
-    return;
-  }
-  queueOverlayDrag({
-    ...overlayDrag.startBounds,
-    x: Math.round(overlayDrag.startBounds.x + (event.screenX - overlayDrag.startScreenX)),
-    y: Math.round(overlayDrag.startBounds.y + (event.screenY - overlayDrag.startScreenY))
-  });
-}
-
-function endMascotDrag(event) {
-  if (!overlayDrag || event.pointerId !== overlayDrag.pointerId) {
-    return;
-  }
-  const finalBounds = overlayDrag.latestBounds ?? overlayDrag.startBounds;
-  overlayDrag = null;
-  document.body.classList.remove("dragging");
-  if (pendingOverlayDragFrame != null) {
-    cancelAnimationFrame(pendingOverlayDragFrame);
-    pendingOverlayDragFrame = null;
-  }
-  window.ccf.setOverlayBounds(finalBounds);
-}
+const mascotDrag = createMascotDrag({
+  element: mascotShell,
+  enabled: mascotModeEnabled,
+  getBounds: () => window.ccf.getOverlayBounds(),
+  setBounds: (bounds) => window.ccf.setOverlayBounds(bounds),
+  setDragging: (dragging) => document.body.classList.toggle("dragging", dragging),
+  requestFrame: (callback) => requestAnimationFrame(callback),
+  cancelFrame: (handle) => cancelAnimationFrame(handle)
+});
 
 mascotVideo.addEventListener("ended", () => {
   if (!mascot) {
@@ -765,11 +710,12 @@ window.addEventListener("keydown", async (event) => {
 });
 
 mascotShell.addEventListener("pointerdown", (event) => {
-  beginMascotDrag(event).catch(() => {});
+  mascotDrag.begin(event).catch(() => {});
 });
-mascotShell.addEventListener("pointermove", updateMascotDrag);
-mascotShell.addEventListener("pointerup", endMascotDrag);
-mascotShell.addEventListener("pointercancel", endMascotDrag);
+mascotShell.addEventListener("pointermove", mascotDrag.move);
+mascotShell.addEventListener("pointerup", mascotDrag.end);
+mascotShell.addEventListener("pointercancel", mascotDrag.end);
+mascotShell.addEventListener("lostpointercapture", mascotDrag.end);
 
 window.ccf.onState(async (state) => {
   if (!latestSettings) await loadSettings();

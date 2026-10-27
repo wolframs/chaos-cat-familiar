@@ -1,16 +1,16 @@
 {
-  "excluded_files": 14,
+  "excluded_files": 15,
   "file_counts": {
     "add": 3,
-    "copy": 248,
+    "copy": 254,
     "override": 6,
     "redact": 4
   },
   "manifest_name": "chaos-cat-familiar",
   "manifest_sha256": "ecf20cbbf37eaf0e7c519adbd46b72665fcccf24a17f45f46a5c4090561bfca4",
   "open_reviews": 0,
-  "source_commit": "2d9ac054be99596256d593d09be055cd7427ef61",
-  "staged_files": 261,
+  "source_commit": "97ca49745e30bcd646e3872901692cade17b61f5",
+  "staged_files": 267,
   "tool_version": "1",
   "unclassified_files": 0,
   "updates": [
@@ -25,6 +25,13 @@
       "how": "Manual port from 6badf958d369: drag responsiveness and crash fixes, batched persistence, unclean-run recovery, terminal coalescing and incremental rendering. Public documentation and sanitized companion tests edited in place; private reports excluded.",
       "changed_files": 29,
       "validation": "Full serial public snapshot test suite; runtime code copied verbatim from the source validated by isolated Electron smoke."
+    },
+    {
+      "date": "2026-10-27",
+      "source_commit": "97ca49745e30bcd646e3872901692cade17b61f5",
+      "how": "Manual port of the purple pixel cat tray icon, useful tray navigation and error feedback, launch-mode override fix, and dashboard window controls. Public status/debugging documentation edited in place; private tray audit excluded.",
+      "changed_files": 15,
+      "validation": "308 source tests and isolated Electron smoke passed; real Windows menu actions and dashboard close checked in a temporary profile. Public tray/dashboard/z-order tests run separately."
     }
   ]
 }

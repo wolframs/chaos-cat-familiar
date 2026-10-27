@@ -141,7 +141,7 @@ test("toggle hotkey summons a buried companion before it hides it, and the tray 
   toggle.handler();
   assert.equal(cat.isVisible(), true);
 
-  const item = electron.Menu.lastTemplate.find((entry) => entry.label === "Bring Companion to Front");
+  const item = electron.Menu.lastTemplate.find((entry) => entry.id === "show-companion");
   assert.ok(item, "tray menu offers the escape hatch");
   conversation.focused = false;
   conversation.alwaysOnTop = false;

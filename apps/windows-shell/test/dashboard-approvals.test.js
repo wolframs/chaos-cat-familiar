@@ -39,3 +39,34 @@ test("questions require answers and plan feedback uses supported approval action
   assert.deepEqual(dashboardApprovalSubmission(approval, { answers: { "Which?": "First, Second" } }), { id: "question", action: "allowWithAnswers", payload: { answers: { "Which?": "First, Second" } } });
   assert.deepEqual(dashboardApprovalSubmission({ id: "plan", event: { toolName: "ExitPlanMode" } }, { feedback: " use tests " }), { id: "plan", action: "allowWithFeedback", payload: { feedback: "use tests" } });
 });
+
+test("tray Settings navigation survives initial state loading and dashboard window controls work", async () => {
+  const source = (await readFile(new URL("../renderer/dashboard.js", import.meta.url), "utf8")).replace(/^import .*;\r?\n/gm, "");
+  const nodes = new Map();
+  function node(id) {
+    if (!nodes.has(id)) nodes.set(id, { handlers: {}, classList: { toggle(name, value) { this[name] = value; } },
+      addEventListener(name, handler) { this.handlers[name] = handler; }, querySelector() { return null; }, querySelectorAll() { return []; } });
+    return nodes.get(id);
+  }
+  let resolveState;
+  let selectSection;
+  const actions = [];
+  const state = { sessions: [], approvals: [], notifications: [], ui: { onboarding: { required: true } } };
+  vm.runInNewContext(source, { document: { getElementById: node }, console,
+    window: { ccf: {
+      getState: () => new Promise((resolve) => { resolveState = resolve; }), getSettings: async () => ({}),
+      getMascotLibrary: async () => ({ mascots: [] }), getLogMetadata: async () => ({}), diagnoseHooks: async () => ({}),
+      onState() {}, onSettings() {}, onMascotLibrary() {}, onDashboardSection(handler) { selectSection = handler; },
+      windowAction: (action) => actions.push(action)
+    } }
+  });
+  selectSection("settings");
+  resolveState(state);
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(node("viewTitle").textContent, "Settings");
+  assert.equal(node("onboarding").classList.visible, false, "onboarding cannot cover an explicitly opened Settings view");
+  selectSection("unknown-section");
+  assert.equal(node("viewTitle").textContent, "Settings");
+  for (const id of ["windowMinimize", "windowMaximize", "windowClose"]) await node(id).handlers.click();
+  assert.deepEqual(actions, ["minimize", "toggle-maximize", "close"]);
+});

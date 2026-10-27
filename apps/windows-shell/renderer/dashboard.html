@@ -11,10 +11,34 @@
           linear-gradient(180deg, var(--ccf-page), var(--ccf-page-warm));
       }
 
+      .window-titlebar {
+        position: sticky;
+        top: 0;
+        z-index: 10;
+        height: 40px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding-left: 16px;
+        background: #f7f4fb;
+        border-bottom: 1px solid var(--ccf-border);
+        color: var(--ccf-text-soft);
+        font-size: 12px;
+        font-weight: 700;
+        -webkit-app-region: drag;
+        user-select: none;
+      }
+
+      .window-controls { display: flex; height: 100%; -webkit-app-region: no-drag; }
+      .window-controls button { width: 44px; border: 0; border-radius: 0; background: transparent; color: inherit; padding: 0; font: inherit; }
+      .window-controls button:hover { background: #e9e0f4; }
+      .window-controls #windowClose:hover { background: #c73852; color: white; }
+      .window-controls button:focus-visible { outline: 2px solid #8a54c7; outline-offset: -3px; }
+
       .shell {
         display: grid;
         grid-template-columns: 284px minmax(0, 1fr);
-        min-height: 100vh;
+        min-height: calc(100vh - 41px);
       }
 
       .sidebar {
@@ -430,6 +454,14 @@
     </style>
   </head>
   <body>
+    <header class="window-titlebar">
+      <span>Chaos Cat Familiar — Dashboard</span>
+      <div class="window-controls">
+        <button id="windowMinimize" aria-label="Minimize window" title="Minimize">−</button>
+        <button id="windowMaximize" aria-label="Maximize or restore window" title="Maximize or restore">□</button>
+        <button id="windowClose" aria-label="Close window" title="Close">×</button>
+      </div>
+    </header>
     <div class="shell">
       <aside class="sidebar">
         <div class="brand">

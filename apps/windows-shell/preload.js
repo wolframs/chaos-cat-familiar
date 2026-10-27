@@ -86,5 +86,6 @@ contextBridge.exposeInMainWorld("ccf", {
     return () => ipcRenderer.removeListener("ccf:design-reload", listener);
   },
   onMascotLibrary: (handler) => ipcRenderer.on("ccf:mascot-library", (_event, value) => handler(value)),
-  onSettings: (handler) => ipcRenderer.on("ccf:settings", (_event, value) => handler(value))
+  onSettings: (handler) => ipcRenderer.on("ccf:settings", (_event, value) => handler(value)),
+  onDashboardSection: (handler) => ipcRenderer.on("ccf:dashboard-section", (_event, value) => handler(value))
 });

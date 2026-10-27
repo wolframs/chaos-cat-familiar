@@ -28,6 +28,9 @@ Diagnostic metadata exposes `placement` pending/error status.
 
 ## What is recorded
 
+- Tray action failures are logged under `tray` and show an error dialog. A failed
+  menu action is caught before it can become a fatal process exception. Hook setup
+  lives in Dashboard → Settings, where its result can be inspected.
 - Normal lifecycle, hook installation, approvals, window/renderer failures and activation attempts.
 - Debug: request ID, hook/session/tool identity, HTTP status, disconnects and elapsed milliseconds.
   No request body or headers are added by tracing. Sensitive structured context keys are redacted

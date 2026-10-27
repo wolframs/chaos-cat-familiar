@@ -308,6 +308,7 @@ export function createWindowsShellRuntime({
   let tray = null;
   let overlayWindow = null;
   let dashboardWindow = null;
+  let dashboardRequestedSection = null;
   let diagnosticsWindow = null;
   let mascotWindow = null;
   let mascotPreviewWindow = null;
@@ -612,16 +613,9 @@ export function createWindowsShellRuntime({
   }
 
   function createTrayIcon() {
-    const svg = `
-      <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32">
-        <rect width="32" height="32" rx="8" fill="#171b21"/>
-        <circle cx="16" cy="16" r="10" fill="#f95d02"/>
-        <circle cx="13" cy="14" r="2" fill="#fff"/>
-        <circle cx="19" cy="14" r="2" fill="#fff"/>
-        <path d="M11 20c2.4 2.2 7.6 2.2 10 0" stroke="#fff" stroke-width="2" fill="none" stroke-linecap="round"/>
-      </svg>
-    `;
-    return nativeImage.createFromDataURL(`data:image/svg+xml;base64,${Buffer.from(svg).toString("base64")}`);
+    // Let Windows choose a real 16/20/24/32px ICO representation for its DPI.
+    // SVG data URLs decode as empty NativeImages on this Electron/Windows stack.
+    return path.join(SHELL_ROOT, "assets", "tray", "chaos-cat.ico");
   }
 
   function saveSettingsPatch(patch) {
@@ -906,8 +900,9 @@ export function createWindowsShellRuntime({
       });
       dashboardWindow = window;
       wireWindowLogging(window, "dashboard", true);
+      window.webContents.on("did-finish-load", () => sendDashboardSection(window));
       window.loadFile(path.join(SHELL_ROOT, "renderer", "dashboard.html"));
-      window.on("close", () => { dashboardWindow = null; window.destroy(); });
+      window.on("close", () => { dashboardWindow = null; dashboardRequestedSection = null; window.destroy(); });
       return window;
     }
   }
@@ -986,8 +981,18 @@ export function createWindowsShellRuntime({
     showUtilityWindow(ensureUtilityWindow("diagnostics"));
   }
 
-  function showDashboard() {
-    showUtilityWindow(ensureUtilityWindow("dashboard"));
+  function sendDashboardSection(window) {
+    if (!dashboardRequestedSection || window.isDestroyed()) return;
+    const section = dashboardRequestedSection;
+    dashboardRequestedSection = null;
+    window.webContents.send("ccf:dashboard-section", section);
+  }
+
+  function showDashboard(section = null) {
+    if (section) dashboardRequestedSection = section;
+    const window = ensureUtilityWindow("dashboard");
+    showUtilityWindow(window);
+    if (!window.webContents.isLoading?.()) sendDashboardSection(window);
   }
 
   function showMascotManager() {
@@ -1003,11 +1008,12 @@ export function createWindowsShellRuntime({
     if (currentSettings().snoozeUntil === "manual") {
       return;
     }
+    saveSettingsPatch({ overlayVisible: true });
     positionOverlayWindow();
     overlayWindow.showInactive();
     syncOverlayHudWindows();
     raiseCompanionCluster("show-overlay");
-    saveSettingsPatch({ overlayVisible: true });
+    refreshTrayMenu();
   }
 
   // Escape hatch for a cluster buried behind other windows.
@@ -1021,6 +1027,7 @@ export function createWindowsShellRuntime({
     companionConversationWindow?.hide();
     companionStatusWindow?.hide();
     saveSettingsPatch({ overlayVisible: false });
+    refreshTrayMenu();
   }
 
   function broadcastMascotLibrary() {
@@ -1042,6 +1049,7 @@ export function createWindowsShellRuntime({
     mascotPreviewWindow?.webContents.send("ccf:settings", payload);
     applyOverlayPreferences();
     syncOverlayHudWindows();
+    refreshTrayMenu();
   }
 
   async function handleCcfProtocol(rawUrl) {
@@ -1235,7 +1243,8 @@ export function createWindowsShellRuntime({
   function setAppShellMode(mode) {
     const nextMode = normalizeShellMode(mode);
     const settings = settingsStore.load();
-    saveSettingsPatch({ appShellMode: nextMode });
+    saveSettingsPatch({ appShellMode: nextMode, snoozeUntil: null, overlayVisible: true });
+    runtimePaths.appModeOverride = null; // Launch defaults must not defeat an explicit choice.
     registerGlobalShortcuts();
     logger?.info("window", "Updated app shell mode", {
       previousMode: settings.appShellMode ?? "developer",
@@ -1261,44 +1270,54 @@ export function createWindowsShellRuntime({
     const icon = createTrayIcon();
     tray = new Tray(icon);
     tray.setToolTip("Chaos Cat Familiar");
-    onWithCleanup(tray, "click", () => {
-      overlayWindow.isVisible() ? hideOverlayWindow() : showOverlay();
-    });
+    onWithCleanup(tray, "click", trayAction("Toggle companion", () => {
+      overlayWindow.isVisible() ? hideOverlayWindow() : openCompanionFromTray();
+    }));
+    refreshTrayMenu();
+  }
+
+  function trayAction(label, action) {
+    return async () => {
+      try { await action(); }
+      catch (error) {
+        logger?.error("tray", `${label} failed`, { error: String(error?.stack ?? error) });
+        try {
+          dialog?.showErrorBox?.("Chaos Cat Familiar", `${label} could not be completed.\n\n${String(error?.message ?? error)}\n\nLog: ${logger?.filePath ?? "unavailable"}`);
+        } catch { /* Reporting must not turn a menu failure into an app crash. */ }
+      }
+    };
+  }
+
+  function openCompanionFromTray() {
+    if (currentSettings().appShellMode !== "mascot") setAppShellMode("mascot");
+    companionHudActive = true;
+    saveSettingsPatch({ snoozeUntil: null, overlayVisible: true });
+    showOverlay();
+    raiseCompanionCluster("tray", { focusComposer: true });
+    refreshTrayMenu();
+  }
+
+  function refreshTrayMenu() {
+    if (!tray || tray.isDestroyed?.()) return;
+    const mode = currentSettings().appShellMode;
+    const action = (id, label, run, extra = {}) => ({ id, label, ...extra, click: trayAction(label, run) });
     tray.setContextMenu(
       Menu.buildFromTemplate([
-        { label: "Bring Companion to Front", click: () => bringCompanionToFront("tray") },
-        { label: "Open Dashboard", click: () => showDashboard() },
-        {
-          label: "Show Overlay",
-          click: () => {
-            positionOverlayWindow();
-            showOverlay();
-          }
-        },
-        { label: "Open Diagnostics", click: () => showDiagnostics() },
-        { label: "Switch to Floating Mascot Mode", click: () => setAppShellMode("mascot") },
-        { label: "Switch to Developer Overlay", click: () => setAppShellMode("developer") },
-        { label: "Open Mascots", click: () => showMascotManager() },
-        { label: "Preview Mascot", click: () => showMascotPreview() },
-        {
-          label: "Install Claude Hooks",
-          click: async () => {
-            const result = await runHookOperation(() => controller.hookInstaller.install());
-            diagnosticsWindow?.webContents.send("hook-install-result", result);
-          }
-        },
-        {
-          label: "Repair Claude Hooks",
-          click: async () => {
-            const result = await runHookOperation(() => controller.hookInstaller.repair());
-            diagnosticsWindow?.webContents.send("hook-install-result", result);
-          }
-        },
+        action("show-companion", "Show Companion", openCompanionFromTray),
+        action("hide-companion", "Hide Companion", hideOverlayWindow, { enabled: Boolean(overlayWindow?.isVisible()) }),
         { type: "separator" },
-        {
-          label: "Quit",
-          click: () => stop("tray-quit").then(() => app.quit()).catch(() => {})
-        }
+        action("dashboard", "Dashboard...", () => showDashboard()),
+        action("settings", "Settings...", () => showDashboard("settings")),
+        action("mascots", "Mascots...", showMascotManager),
+        { id: "advanced", label: "Advanced", submenu: [
+          action("diagnostics", "Diagnostics...", showDiagnostics),
+          action("preview", "Mascot Preview...", showMascotPreview),
+          { type: "separator" },
+          action("mascot-mode", "Floating Mascot", () => setAppShellMode("mascot"), { type: "radio", checked: mode === "mascot" }),
+          action("developer-mode", "Developer Overlay", () => setAppShellMode("developer"), { type: "radio", checked: mode === "developer" })
+        ] },
+        { type: "separator" },
+        action("quit", "Quit", async () => { await stop("tray-quit"); app.quit(); })
       ])
     );
   }
@@ -1539,6 +1558,7 @@ export function createWindowsShellRuntime({
         }
       };
       settingsStore.save(merged);
+      if (nextSettings.appShellMode != null) runtimePaths.appModeOverride = null;
       logger.configure({ debugLogging: merged.debugLogging === true });
       performanceSampler.configure(merged.performanceProfiling === true);
       logger.info("diagnostics", "Diagnostic settings applied", {

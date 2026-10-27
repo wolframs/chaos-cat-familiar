@@ -386,7 +386,8 @@ function renderView() {
 
 function renderOnboarding() {
   const ui = state?.ui?.onboarding;
-  const visible = Boolean(ui?.required) && !(state?.approvals?.length > 0);
+  const visible = Boolean(ui?.required) && !(state?.approvals?.length > 0)
+    && !["settings", "mascots"].includes(currentSection);
   onboarding.classList.toggle("visible", visible);
   if (!visible) return;
   const step = Math.max(0, Math.min(ui.currentStep ?? 0, onboardingSteps.length - 1));
@@ -449,8 +450,20 @@ function selectInitialSection() {
 window.ccf.onState((value) => { state = value; selectInitialSection(); renderNav(); renderSummary(); renderView(); renderOnboarding(); });
 window.ccf.onSettings((value) => { settings = value; renderSummary(); renderView(); });
 window.ccf.onMascotLibrary((value) => { mascotLibrary = value; renderSummary(); renderView(); });
+window.ccf.onDashboardSection?.((section) => {
+  if (!sections.some(([id]) => id === section)) return;
+  currentSection = section;
+  receivedInitialState = true;
+  renderNav();
+  renderView();
+  renderOnboarding();
+});
+
+for (const [id, action] of [["windowMinimize", "minimize"], ["windowMaximize", "toggle-maximize"], ["windowClose", "close"]]) {
+  document.getElementById(id)?.addEventListener("click", () => window.ccf.windowAction(action));
+}
 
 openDiagnostics.addEventListener("click", async () => { await window.ccf.openDiagnostics(); });
-rerunOnboarding.addEventListener("click", async () => { await window.ccf.dispatchCommand("reset-onboarding"); await refresh(); });
+rerunOnboarding.addEventListener("click", async () => { currentSection = "activity"; await window.ccf.dispatchCommand("reset-onboarding"); await refresh(); });
 
 refresh();

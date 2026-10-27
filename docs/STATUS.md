@@ -4,6 +4,11 @@ As of 2026-10-27. Dev-run only: no installer, no packaged build has been tested.
 
 ## Where it stands
 
+- The tray now uses a purple pixel cat ICO with Windows DPI sizes. Show/Hide Companion
+  controls the complete cluster without starting or stopping Claude; Settings opens
+  directly in the dashboard. Diagnostics, preview and mode choices live under Advanced.
+  Explicit mode choices override launch defaults, menu errors are reported, and the
+  dashboard has draggable minimize/maximize/close controls.
 - Mascot dragging saves its position on release, keeping settings file I/O out of
   movement frames. Cluster bounds are calculated before moving the windows, avoiding
   edge bounce. Temporary settings-file locks retain and retry the latest position
@@ -11,7 +16,7 @@ As of 2026-10-27. Dev-run only: no installer, no packaged build has been tested.
 - State checkpoints and ordinary file logs batch over 250 ms, with bounded log buffers
   and an unclean-run marker. Terminal snapshots coalesce over 33 ms; the renderer
   retains unchanged rows and scrollback instead of rebuilding them on each update.
-- The full serial test suite passes 302 tests; the isolated Electron smoke test passes.
+- The full serial test suite passes 308 tests; the isolated Electron smoke test passes.
 - Core (`packages/core`): hook server, sessions, approvals, notification routing. Covered by automated tests; real Claude-session validation remains outstanding.
 - Shell (`apps/windows-shell`): tray, overlay, dashboard, diagnostics, mascots. Claude Code
   only; Codex and Copilot support was cut on 2026-10-16. Runs with `npm run start:windows-shell`.

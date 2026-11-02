@@ -3,65 +3,8 @@
   <head>
     <meta charset="utf-8" />
     <title>Chaos Cat Familiar Mascots</title>
+    <link rel="stylesheet" href="./brand-tokens.css" />
     <style>
-      :root {
-        --bg: #f6f1e8;
-        --ink: #23113c;
-        --muted: rgba(35, 17, 60, 0.68);
-        --card: rgba(255, 255, 255, 0.88);
-        --border: rgba(35, 17, 60, 0.12);
-        --accent: #f95d02;
-      }
-
-      body {
-        margin: 0;
-        font-family: "Segoe UI", sans-serif;
-        color: var(--ink);
-        background:
-          radial-gradient(circle at top left, rgba(249, 93, 2, 0.18), transparent 28%),
-          linear-gradient(180deg, #fffaf3 0%, var(--bg) 100%);
-      }
-
-      .titlebar {
-        height: 56px;
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        padding: 0 14px 0 18px;
-        background: rgba(255, 250, 243, 0.84);
-        border-bottom: 1px solid var(--border);
-        backdrop-filter: blur(18px);
-        -webkit-app-region: drag;
-      }
-
-      .titlebar-label {
-        display: flex;
-        align-items: center;
-        gap: 10px;
-        font-size: 13px;
-        font-weight: 700;
-      }
-
-      .titlebar-dot {
-        width: 10px;
-        height: 10px;
-        border-radius: 999px;
-        background: var(--accent);
-        box-shadow: 0 0 0 4px rgba(249, 93, 2, 0.16);
-      }
-
-      .window-controls {
-        display: flex;
-        gap: 8px;
-        -webkit-app-region: no-drag;
-      }
-
-      .window-controls button {
-        width: 34px;
-        height: 34px;
-        padding: 0;
-        border-radius: 10px;
-      }
 
       main {
         max-width: 1040px;
@@ -80,7 +23,7 @@
         background: var(--card);
         border: 1px solid var(--border);
         border-radius: 22px;
-        box-shadow: 0 16px 50px rgba(35, 17, 60, 0.08);
+        box-shadow: var(--ccf-shadow);
       }
 
       .hero-card {
@@ -113,7 +56,7 @@
         padding: 12px 14px;
         border-radius: 999px;
         border: 1px solid var(--border);
-        background: white;
+        background: var(--ccf-page);
       }
 
       button {
@@ -129,7 +72,7 @@
       }
 
       .secondary {
-        background: rgba(35, 17, 60, 0.08);
+        background: var(--ccf-surface-muted);
         color: var(--ink);
       }
 
@@ -171,7 +114,7 @@
         aspect-ratio: 1;
         object-fit: contain;
         border-radius: 16px;
-        background: radial-gradient(circle at 30% 20%, rgba(249, 93, 2, 0.18), rgba(255,255,255,0.4) 48%, rgba(35,17,60,0.04) 100%);
+        background: radial-gradient(circle at 30% 20%, rgba(206, 153, 246, 0.18), rgba(206,153,246,0.04) 48%, rgba(35,17,60,0.04) 100%);
       }
 
       .eyebrow {
@@ -179,7 +122,7 @@
         margin-top: 12px;
         padding: 5px 10px;
         border-radius: 999px;
-        background: rgba(249, 93, 2, 0.12);
+        background: rgba(206, 153, 246, 0.12);
         color: var(--accent);
         font-size: 12px;
         font-weight: 600;
@@ -202,7 +145,7 @@
         padding: 12px;
         border-radius: 16px;
         border: 1px solid var(--border);
-        background: rgba(255, 255, 255, 0.72);
+        background: var(--ccf-surface);
         color: var(--ink);
         text-align: left;
       }
@@ -214,18 +157,17 @@
         margin-top: 20px;
       }
     </style>
+    <link rel="stylesheet" href="./utility-window.css" />
   </head>
   <body>
-    <div class="titlebar">
-      <div class="titlebar-label">
-        <span class="titlebar-dot"></span>
-        <span>Chaos Cat Familiar Mascots</span>
+    <header class="window-titlebar">
+      <span>Chaos Cat Familiar — Mascots</span>
+      <div class="window-controls" role="group" aria-label="Window controls">
+        <button id="windowMinimize" data-window-action="minimize" aria-label="Minimize window" title="Minimize">−</button>
+        <button id="windowMaximize" data-window-action="toggle-maximize" aria-label="Maximize or restore window" title="Maximize or restore">□</button>
+        <button id="windowClose" data-window-action="close" aria-label="Close window" title="Close">×</button>
       </div>
-      <div class="window-controls">
-        <button class="secondary" id="windowMinimize" aria-label="Minimize window">-</button>
-        <button class="secondary" id="windowClose" aria-label="Close window">x</button>
-      </div>
-    </div>
+    </header>
     <main>
       <section class="hero">
         <article class="card hero-card">
@@ -247,7 +189,7 @@
           <div>
             <img id="currentMascotImage" alt="Selected mascot" />
             <div style="text-align:center;margin-top:12px;">
-              <strong id="currentMascotName">Masko</strong>
+              <strong id="currentMascotName">Chaos Cat</strong>
               <div class="meta" id="currentMascotMeta">Bundled default mascot</div>
             </div>
           </div>
@@ -267,6 +209,7 @@
         <div class="library" id="mascotLibrary"></div>
       </section>
     </main>
+    <script src="./window-controls.js"></script>
     <script type="module" src="./mascots.js"></script>
     <script type="module" src="./design-reload.js"></script>
   </body>

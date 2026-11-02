@@ -17,6 +17,20 @@ class FakePty extends EventEmitter {
   kill() { this.killed = true; this.emit("exit", { exitCode: 0 }); }
 }
 
+test('Claude uses its saved repository on the next explicit start, without changing a running PTY', async t => {
+  const launches = [];
+  const session = new CompanionSession({ repoPath: 'C:/original', existingSessionProbe: async () => null,
+    ptyFactory: async spec => { launches.push(spec); return new FakePty(); } });
+  t.after(() => session.stop());
+  await session.start({ userInitiated: true, cwd: 'C:/chosen' });
+  assert.equal(launches[0].cwd, 'C:\\chosen');
+  await session.start({ userInitiated: true, cwd: 'C:/later' });
+  assert.equal(launches.length, 1);
+  await session.stop();
+  await session.start({ userInitiated: true, cwd: 'C:/later' });
+  assert.equal(launches[1].cwd, 'C:\\later');
+});
+
 function screenWhen(session, expected) {
   if (session.getSnapshot().terminal.screen === expected) return Promise.resolve();
   return new Promise((resolve, reject) => {

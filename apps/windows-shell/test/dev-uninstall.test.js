@@ -22,6 +22,8 @@ test("dev uninstall respects flags, preserves unrelated hooks and keeps data on 
   const initialSettings = JSON.stringify({ otherSetting: true, hooks: { Stop: [{ hooks: [
     { type: "command", command: `powershell -File "${hookPath}"` },
     { type: "command", command: "python keep-me.py" }
+  ] }], PreToolUse: [{ matcher: "", hooks: [
+    { type: "http", url: "http://127.0.0.1:49152/hook", headers: { "X-Ccf-Token": "t" }, timeout: 5 }
   ] }] } });
   fs.writeFileSync(settingsPath, initialSettings);
   const script = fileURLToPath(new URL("../../../scripts/windows/dev-uninstall.ps1", import.meta.url));
@@ -45,6 +47,7 @@ test("dev uninstall respects flags, preserves unrelated hooks and keeps data on 
   const settings = JSON.parse(fs.readFileSync(settingsPath, "utf8"));
   assert.equal(settings.otherSetting, true);
   assert.deepEqual(settings.hooks.Stop[0].hooks, [{ type: "command", command: "python keep-me.py" }]);
+  assert.equal(settings.hooks.PreToolUse, undefined, "CCF http hooks are removed too");
   assert.equal(fs.existsSync(path.join(home, ".chaos-cat-familiar")), false);
   assert.equal(fs.existsSync(path.join(appData, "chaos-cat-familiar")), false);
 });

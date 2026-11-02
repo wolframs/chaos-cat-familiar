@@ -62,7 +62,8 @@ export function hideClaudePromptBox(lines) {
 }
 
 const renderedScreens = new WeakMap();
-const RUN_FIELDS = ["text", "columns", "foreground", "background", "bold", "dim", "italic", "underline"];
+const RUN_FIELDS = ["text", "columns", "foreground", "background", "bold", "dim", "italic", "underline", "link"];
+const LINK = /^(https?|file):\/\//i;
 
 function validRun(run) { return run && typeof run.text === "string"; }
 
@@ -109,6 +110,12 @@ function createRow(document, runs) {
     if (run.dim === true) span.style.opacity = "0.65";
     if (run.italic === true) span.style.fontStyle = "italic";
     if (run.underline === true) span.style.textDecorationLine = "underline";
+    // A data attribute, not <a href>: a click must never navigate the pane itself.
+    if (typeof run.link === "string" && LINK.test(run.link)) {
+      span.dataset.link = run.link;
+      span.title = run.link;
+      span.classList.add("terminal-link");
+    }
     node.append(span);
   }
   return { node, separator, runs: savedRuns, key: rowKey(savedRuns) };

@@ -147,6 +147,8 @@ class Element {
     this.tagName = tagName;
     this.ownerDocument = ownerDocument;
     this.style = {};
+    this.dataset = {};
+    this.classList = { add: (name) => { this.className = name; } };
     this.children = [];
     this._textContent = "";
     this.parentNode = null;
@@ -200,6 +202,23 @@ test("terminal renderer creates safe styled spans and rejects untrusted CSS valu
   assert.equal(next.textContent, "next");
   renderCompanionTerminal(element, { screen: "old fixture\ntext" });
   assert.equal(element.children[0].textContent, "old fixture\ntext");
+});
+
+test("OSC 8 links reach the renderer as clickable spans; other schemes and plain text stay inert", async () => {
+  const terminal = new headless.Terminal({ cols: 60, rows: 3, allowProposedApi: true });
+  try {
+    await write(terminal, "see \x1b]8;;file:///C:/x/handoff.md\x07\x1b[4mhandoff\x1b[0m\x1b]8;;\x07 and "
+      + "\x1b]8;;javascript:alert(1)\x07bad\x1b]8;;\x07 end");
+    const runs = readTerminalScreen(terminal).lines[0];
+    assert.deepEqual(runs.map(({ text, link }) => [text, link]),
+      [["see ", null], ["handoff", "file:///C:/x/handoff.md"], [" and ", null], ["bad", null], [" end", null]]);
+    const element = new Element("pre", document);
+    renderCompanionTerminal(element, { lines: [runs] });
+    const [, plain, linked] = element.children[0].children;
+    assert.equal(linked.dataset.link, "file:///C:/x/handoff.md");
+    assert.equal(linked.className, "terminal-link");
+    assert.equal(plain.dataset.link, undefined);
+  } finally { terminal.dispose(); }
 });
 
 test("terminal DOM retains 1000 history rows across repaint, append and trim with legacy snapshots", () => {

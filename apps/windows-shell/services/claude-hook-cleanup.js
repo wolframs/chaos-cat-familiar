@@ -1,5 +1,19 @@
+// CCF owns two kinds of Claude hook entries: the PowerShell sender command (events that need a
+// shell PID or a blocking reply) and http hooks that POST straight to the local hook server.
+const CCF_HOOK_URL = /^http:\/\/127\.0\.0\.1:\d{1,5}\/hook$/;
+
 function hookCommandIncludes(command, hookPath) {
   return String(command ?? "").toLowerCase().includes(String(hookPath ?? "").toLowerCase());
+}
+
+export function isCcfHttpHook(hook) {
+  if (hook?.type !== "http" || !CCF_HOOK_URL.test(String(hook.url ?? ""))) return false;
+  const headers = hook.headers && typeof hook.headers === "object" ? Object.keys(hook.headers) : [];
+  return headers.some((name) => name.toLowerCase() === "x-ccf-token");
+}
+
+export function isCcfOwnedHook(hook, hookPath) {
+  return hookCommandIncludes(hook?.command, hookPath) || isCcfHttpHook(hook);
 }
 
 export function removeCcfHookRegistrations(settingsJson, hookPath) {
@@ -26,7 +40,7 @@ export function removeCcfHookRegistrations(settingsJson, hookPath) {
     const filteredEntries = entries
       .map((entry) => {
         const hooks = Array.isArray(entry?.hooks) ? entry.hooks : [];
-        const remainingHooks = hooks.filter((hook) => !hookCommandIncludes(hook.command, hookPath));
+        const remainingHooks = hooks.filter((hook) => !isCcfOwnedHook(hook, hookPath));
         if (remainingHooks.length !== hooks.length) {
           changed = true;
         }

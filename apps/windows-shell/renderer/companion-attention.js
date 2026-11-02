@@ -15,6 +15,7 @@ export function companionAttention(state = {}) {
     ? sessions.find((item) => item.id === approval.event?.sessionId)
     : working ?? sessions.find((item) => item.id === toast?.sessionId) ?? active[0];
   const identity = sessionIdentity(session ?? (approval ? { id: approval.event?.sessionId ?? "unknown", projectDir: approval.event?.cwd } : null));
+  if(state.hostedCompanion?.pendingRequestCount>0)return{kind:'waiting',label:'Waiting for you',summary:'Codex has a request in the conversation',session:sessions.find(s=>s.id===state.hostedCompanion.sessionId),identity:'Codex work companion'};
   if (approval) return { kind: "waiting", label: "Waiting for you", summary: `${approval.event?.toolName ?? "Request"} needs approval`, session, approval, identity };
   if (working) return { kind: "working", label: "Working", summary: working.isCompacting ? "Compacting context" : "Working", session, identity };
   if (toast) return { kind: "finished", label: "Finished", summary: toast.completedCount > 1 ? `${toast.completedCount} sessions finished` : "Finished", session, identity };

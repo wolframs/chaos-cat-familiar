@@ -36,3 +36,23 @@ test("companion launcher focuses CCF through its authenticated endpoint without 
     fs.rmSync(root, { recursive: true, force: true });
   }
 });
+
+test("explicit backend reaches the authenticated launcher without a Claude fallback", async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "ccf-backend-open-test-"));
+  const settingsPath = path.join(root, "settings.json");
+  let payload;
+  const server = http.createServer(async (request, response) => {
+    if (request.method === "POST") {
+      let body = ""; for await (const chunk of request) body += chunk;
+      payload = JSON.parse(body);
+    }
+    response.writeHead(200); response.end("ok");
+  });
+  await new Promise(resolve => server.listen(0, "127.0.0.1", resolve));
+  try {
+    fs.writeFileSync(settingsPath, JSON.stringify({ port: server.address().port, hookToken: "synthetic-token" }));
+    await run("pwsh", ["-NoProfile", "-NonInteractive", "-File", script, "-SettingsPath", settingsPath,
+      "-Backend", "codex"], { timeout: 10000 });
+    assert.equal(payload.backend, "codex");
+  } finally { await new Promise(resolve => server.close(resolve)); fs.rmSync(root, { recursive: true, force: true }); }
+});

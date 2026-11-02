@@ -141,10 +141,11 @@ export class CompanionSession extends EventEmitter {
 
   #changed() { this.emit("change", this.getSnapshot()); }
 
-  async start({ userInitiated = false } = {}) {
+  async start({ userInitiated = false, cwd } = {}) {
     if (!userInitiated) throw new Error("Starting Claude Code requires an explicit user action.");
     if (this.pty) return this.getSnapshot();
     if (this.starting) return this.starting;
+    if (cwd !== undefined) this.spec = companionLaunchSpec(cwd);
     const attempt = { cancelled: false };
     this.startAttempt = attempt;
     this.starting = this.#start(attempt);

@@ -171,6 +171,22 @@ async function main() {
           const terminalCapture = await fetch(`http://127.0.0.1:${metadata.controlPort}/capture-companion`, { headers: controlHeaders });
           if (!terminalCapture.ok) throw new Error("Terminal fixture capture failed");
           fs.writeFileSync(path.join(process.env.CCF_SMOKE_COMPANION_CAPTURE_DIR, "terminal.png"), Buffer.from(await terminalCapture.arrayBuffer()));
+          // The cat's speech bubbles: every style once (each capture shows the stack so far), then a special one.
+          const bubbleLines = ["Meow! api-1 is like \"dude, i can haz input plx?!\"",
+            "Meow! Your agents are like \"dude, i can haz input plx?!\""];
+          const bubbleShots = [["plum"], ["lilac"], ["neon"], ["comic"], ["flame"], ["pixel"], ["plum", true]];
+          for (const [index, [style, special]] of bubbleShots.entries()) {
+            const bubble = await fetch(`http://127.0.0.1:${metadata.hookPort}/companion/bubble`, {
+              method: "POST", headers: { "content-type": "application/json", "x-ccf-token": hookToken },
+              body: JSON.stringify({ text: bubbleLines[index % 2], style, special: Boolean(special) })
+            });
+            if (!bubble.ok || !(await bubble.json()).shown) throw new Error(`Bubble ${style} was not shown`);
+            await delay(special ? 2900 : index === 0 ? 1200 : 450); // the first one also loads the window
+            const bubbleCapture = await fetch(`http://127.0.0.1:${metadata.controlPort}/capture-companion-bubble`, { headers: controlHeaders });
+            if (!bubbleCapture.ok) throw new Error(`Bubble ${style} capture failed`);
+            fs.writeFileSync(path.join(process.env.CCF_SMOKE_COMPANION_CAPTURE_DIR, `bubble-${index + 1}-${style}${special ? "-special" : ""}.png`),
+              Buffer.from(await bubbleCapture.arrayBuffer()));
+          }
         }
       }
       if (designReload) await runDesignReloadSmoke({ repoRoot, appData, runtimeMetadataPath, metadata, controlHeaders });

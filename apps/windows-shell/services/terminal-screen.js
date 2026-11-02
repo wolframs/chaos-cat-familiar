@@ -1,6 +1,7 @@
 // Serializable terminal.lines format: rows of adjacent styled runs. Each run has
 // text, display-cell columns, nullable #rrggbb foreground/background and boolean
-// bold/dim/italic/underline. Wide-character continuation cells are omitted.
+// bold/dim/italic/underline, and a nullable http(s)/file link (OSC 8).
+// Wide-character continuation cells are omitted.
 // Inverse is resolved against these defaults before serialization. No ANSI or
 // markup reaches the renderer. terminal.screen remains the plain-text viewport.
 const DEFAULT_FOREGROUND = "#ded6ea";
@@ -27,7 +28,17 @@ function paletteColour(index) {
     | (levels[Math.floor(cube / 6) % 6] << 8) | levels[cube % 6]);
 }
 
-function cellStyle(cell) {
+// OSC 8 hyperlinks (Claude Code prints them for links) live in xterm's internal link
+// service; @xterm/headless has no public API for them. Without it, runs carry no link.
+const LINK = /^(https?|file):\/\//i;
+function cellLink(cell, links) {
+  // The scratch cell keeps a stale `extended` when the next cell has no extended attributes.
+  const id = cell.hasExtendedAttrs?.() ? cell.extended?.urlId : 0;
+  const uri = id ? links?.getLinkData?.(id)?.uri : null;
+  return typeof uri === "string" && LINK.test(uri) ? uri : null;
+}
+
+function cellStyle(cell, links) {
   let foreground = cell.isFgRGB() ? hex(cell.getFgColor())
     : cell.isFgPalette() ? paletteColour(cell.getFgColor()) : null;
   let background = cell.isBgRGB() ? hex(cell.getBgColor())
@@ -37,11 +48,11 @@ function cellStyle(cell) {
   }
   return {
     foreground, background, bold: Boolean(cell.isBold()), dim: Boolean(cell.isDim()),
-    italic: Boolean(cell.isItalic()), underline: Boolean(cell.isUnderline())
+    italic: Boolean(cell.isItalic()), underline: Boolean(cell.isUnderline()), link: cellLink(cell, links)
   };
 }
 
-function styledLine(line, columns, scratchCell) {
+function styledLine(line, columns, scratchCell, links) {
   if (!line) return [];
   const runs = [];
   let lastVisibleRun = -1;
@@ -50,13 +61,13 @@ function styledLine(line, columns, scratchCell) {
   for (let column = 0; column < columns; column += 1) {
     const cell = line.getCell(column, scratchCell);
     if (!cell || cell.getWidth() === 0) continue;
-    const style = cellStyle(cell);
+    const style = cellStyle(cell, links);
     const text = cell.isInvisible() ? " ".repeat(cell.getWidth()) : cell.getChars() || " ";
     const previousStyle = runs.at(-1);
     if (previousStyle && style.foreground === previousStyle.foreground
       && style.background === previousStyle.background && style.bold === previousStyle.bold
       && style.dim === previousStyle.dim && style.italic === previousStyle.italic
-      && style.underline === previousStyle.underline) {
+      && style.underline === previousStyle.underline && style.link === previousStyle.link) {
       previousStyle.text += text;
       previousStyle.columns += cell.getWidth();
     } else {
@@ -81,6 +92,7 @@ export function readTerminalScreen(terminal) {
   const buffer = terminal.buffer.active;
   // Extract primitives immediately; never retain this mutable xterm cell.
   const scratchCell = buffer.getNullCell();
+  const links = terminal._core?._oscLinkService;
   const textLines = [];
   const lines = [];
   const history = [];
@@ -88,12 +100,12 @@ export function readTerminalScreen(terminal) {
     const line = buffer.getLine(row);
     // getLine returns fresh public wrappers, so identity is not a cache key.
     // Read current cells directly: styles may change without text changing.
-    history.push(styledLine(line, terminal.cols, scratchCell));
+    history.push(styledLine(line, terminal.cols, scratchCell, links));
   }
   for (let row = 0; row < terminal.rows; row += 1) {
     const line = buffer.getLine(buffer.viewportY + row);
     textLines.push(line?.translateToString(true) ?? "");
-    lines.push(styledLine(line, terminal.cols, scratchCell));
+    lines.push(styledLine(line, terminal.cols, scratchCell, links));
   }
   while (lines.length && lines.at(-1).length === 0) lines.pop();
   return {

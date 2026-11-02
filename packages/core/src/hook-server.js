@@ -7,6 +7,19 @@ import { validateHookPayload } from "./hook-validator.js";
 const MAX_BODY_SIZE = 2 * 1024 * 1024;
 const APPROVAL_ACTIONS = new Set(["allow", "deny", "defer", "allowWithAnswers", "allowWithFeedback", "allowWithPermissions"]);
 
+// The cat's speech-bubble events: a catalog key such as "agent_idle", and flat placeholders
+// ({agent: "temp", mins: 16}) that fill a short line.
+function isBubbleEvent(event) {
+  return typeof event === "string" && /^[a-z][a-z0-9_]{0,39}$/.test(event);
+}
+
+function isBubblePlaceholders(placeholders) {
+  if (!placeholders || typeof placeholders !== "object" || Array.isArray(placeholders)) return false;
+  const entries = Object.entries(placeholders);
+  return entries.length <= 12 && entries.every(([key, value]) => /^[a-z][a-z0-9_]{0,23}$/.test(key)
+    && ((typeof value === "string" && value.length <= 120) || (typeof value === "number" && Number.isFinite(value))));
+}
+
 function readJsonBody(req) {
   return new Promise((resolve, reject) => {
     let data = "";
@@ -40,15 +53,23 @@ function readJsonBody(req) {
 
 export class HookServer {
   constructor({ controller, host = "127.0.0.1", port = 49152, authToken = null,
-    onCompanionStatus = null, onCompanionOpen = null }) {
+    onCompanionStatus = null, onCompanionOpen = null, onCompanionBubble = null }) {
     this.controller = controller;
     this.authToken = authToken || randomBytes(32).toString("hex");
     this.host = host;
     this.port = port;
     this.onCompanionStatus = onCompanionStatus;
     this.onCompanionOpen = onCompanionOpen;
+    this.onCompanionBubble = onCompanionBubble;
     this.server = null;
     this.stopping = false;
+    this.observedIds=new Set();this.observationWork=Promise.resolve();
+    this.hookWork = Promise.resolve();
+  }
+
+  // Resolves once every routine hook accepted so far has been ingested (or failed and logged).
+  idle() {
+    return this.hookWork;
   }
 
   logError(...args) {
@@ -120,7 +141,10 @@ export class HookServer {
 
         if (req.method === "POST" && req.url === "/companion/open" && this.onCompanionOpen) {
           try {
-            await this.onCompanionOpen();
+            const payload = (Number(req.headers['content-length'] ?? 0) > 0 || req.headers['transfer-encoding'])
+              ? await readJsonBody(req) : {};
+            if (payload.backend !== undefined && !['claude', 'codex'].includes(payload.backend)) throw new Error('Unsupported companion backend.');
+            await this.onCompanionOpen(payload);
             res.writeHead(200, { "content-type": "application/json; charset=utf-8" });
             res.end(JSON.stringify({ ok: true }));
           } catch (error) {
@@ -131,9 +155,61 @@ export class HookServer {
           return;
         }
 
+        // The work companion's watcher: a speech bubble from the cat when a session waits on the user.
+        if (req.method === "POST" && req.url === "/companion/bubble" && this.onCompanionBubble) {
+          const reply = (statusCode, body) => {
+            res.writeHead(statusCode, { "content-type": "application/json; charset=utf-8" });
+            res.end(JSON.stringify(body));
+          };
+          let payload;
+          try { payload = await readJsonBody(req); } catch (error) {
+            reply(error?.message === "payload_too_large" ? 413 : 400, { error: "invalid_companion_bubble" });
+            return;
+          }
+          const text = typeof payload?.text === "string" ? payload.text.trim() : "";
+          // Either free text, or an event name + placeholders: the shell picks the line from the cat's
+          // catalog. Text sent along with an event is the fallback for an event the catalog lacks.
+          // style and special are optional overrides (tests, trying a look); normally the shell rolls them.
+          const { style, special, event, placeholders } = payload ?? {};
+          if ((!text && event === undefined) || text.length > 300
+            || (event !== undefined && !isBubbleEvent(event))
+            || (placeholders !== undefined && (event === undefined || !isBubblePlaceholders(placeholders)))
+            || (style !== undefined && (typeof style !== "string" || style.length > 40))
+            || (special !== undefined && typeof special !== "boolean")) {
+            reply(400, { error: "invalid_companion_bubble" });
+            return;
+          }
+          const result = await this.onCompanionBubble({ text: text || null, event: event ?? null,
+            placeholders: placeholders ?? null, style: style ?? null, special: special ?? null });
+          if (result?.rejected) {
+            reply(400, { error: result.rejected });
+            return;
+          }
+          reply(200, { ok: true, shown: Boolean(result?.shown),
+            ...(result?.tier ? { tier: result.tier, kind: result.kind, text: result.text } : {}) });
+          return;
+        }
+
+        if(req.method==='POST'&&req.url==='/codex/hook'){
+          try{
+            const payload=await readJsonBody(req);
+            if(payload.backend!=='codex'||payload.observation_only!==true||payload.integration_source!=='codex-hook'||typeof payload.event_id!=='string'||!payload.event_id||payload.event_id.length>256||typeof payload.session_id!=='string'||!payload.session_id||!validateHookPayload(payload).ok)throw new Error('Invalid Codex observation envelope.');
+            if(payload.tool_response!=null&&JSON.stringify(payload.tool_response).length>16384)payload.tool_response={truncated:true,preview:JSON.stringify(payload.tool_response).slice(0,16384)};
+            const operation=this.observationWork.then(async()=>{
+              if(this.observedIds.has(payload.event_id))return;
+              await this.controller.ingestEvent(normalizeEvent(payload));this.observedIds.add(payload.event_id);
+              if(this.observedIds.size>2000)this.observedIds.delete(this.observedIds.values().next().value);
+            });
+            this.observationWork=operation.catch(()=>{});await operation;
+            res.writeHead(200,{'content-type':'application/json; charset=utf-8'});res.end('{}');
+          }catch(error){res.writeHead(error.message==='payload_too_large'?413:400,{'content-type':'application/json; charset=utf-8'});res.end(JSON.stringify({error:'invalid_codex_observation'}));}
+          return;
+        }
+
         if (req.method === "POST" && req.url === "/hook") {
           try {
             const payload = await readJsonBody(req);
+            if(payload.backend==='codex')throw new Error('Codex hook observations must use the observation-only route.');
             const validation = validateHookPayload(payload);
             if (!validation.ok) {
               this.logError("hook", "Hook payload validation failed", {
@@ -187,9 +263,16 @@ export class HookServer {
               return;
             }
 
-            await this.controller.ingestEvent(event);
+            // Claude Code http hooks block until we answer, so answer first and ingest
+            // afterwards. One serial chain keeps events in arrival order.
             res.writeHead(200, { "content-type": "application/json; charset=utf-8" });
             res.end(JSON.stringify({ ok: true }));
+            this.hookWork = this.hookWork.then(() => this.controller.ingestEvent(event)).catch((error) => {
+              this.logError("hook", "Hook ingestion failed after the response", {
+                hookEventName: event.hookEventName, sessionId: event.sessionId,
+                error: String(error?.message ?? error)
+              });
+            });
           } catch (error) {
             const statusCode = error.message === "payload_too_large" ? 413 : 400;
             this.logError("hook", "Hook request failed", {
@@ -290,5 +373,11 @@ export class HookServer {
       });
     });
     this.server = null;
+    // Routine hooks were answered before ingestion: drain them before the final checkpoint.
+    await this.hookWork;
+    try {
+      this.controller.persistState?.();
+      this.controller.publishState?.();
+    } catch {}
   }
 }

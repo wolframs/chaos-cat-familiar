@@ -41,25 +41,25 @@
 }
 
 :root {
-  --ccf-accent: #f95d02;
-  --ccf-accent-soft: rgba(249, 93, 2, 0.14);
-  --ccf-accent-strong: rgba(249, 93, 2, 0.24);
-  --ccf-text: #23113c;
-  --ccf-text-soft: #5d4d72;
-  --ccf-text-faint: #8f86a2;
-  --ccf-page: #faf9f7;
-  --ccf-page-warm: #f6f1ea;
-  --ccf-surface: #ffffff;
-  --ccf-surface-muted: #f7f1eb;
-  --ccf-border: rgba(74, 44, 112, 0.1);
-  --ccf-border-strong: rgba(249, 93, 2, 0.18);
-  --ccf-shadow: 0 14px 30px rgba(35, 17, 60, 0.08);
-  --ccf-shadow-strong: 0 24px 50px rgba(35, 17, 60, 0.14);
-  --ccf-success: #1f9d67;
-  --ccf-danger: #da3b34;
-  --ccf-warning: #d17e00;
+  --ccf-accent: #ce9af4;
+  --ccf-accent-soft: rgba(206, 153, 246, 0.13);
+  --ccf-accent-strong: rgba(206, 153, 246, 0.24);
+  --ccf-text: #f5eefb;
+  --ccf-text-soft: #baa5c7;
+  --ccf-text-faint: #a38eae;
+  --ccf-page: #100d18;
+  --ccf-page-warm: #140f1e;
+  --ccf-surface: #1d1728;
+  --ccf-surface-muted: #30213f;
+  --ccf-border: rgba(206, 153, 246, 0.12);
+  --ccf-border-strong: rgba(206, 153, 246, 0.3);
+  --ccf-shadow: 0 14px 30px rgba(0, 0, 0, 0.12);
+  --ccf-shadow-strong: 0 24px 50px rgba(0, 0, 0, 0.22);
+  --ccf-success: #70d5a1;
+  --ccf-danger: #ffbcb8;
+  --ccf-warning: #ffc170;
   --ccf-radius-md: 18px;
-  --ccf-font-display: "Fredoka", "Segoe UI", sans-serif;
+  --ccf-font-display: "Rubik", "Segoe UI", sans-serif;
   --ccf-font-body: "Rubik", "Segoe UI", sans-serif;
 }
 

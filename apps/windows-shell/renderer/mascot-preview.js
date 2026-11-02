@@ -14,8 +14,6 @@ const syncButton = document.getElementById("syncButton");
 const openManager = document.getElementById("openManager");
 const statusText = document.getElementById("statusText");
 const libraryList = document.getElementById("libraryList");
-const windowMinimize = document.getElementById("windowMinimize");
-const windowClose = document.getElementById("windowClose");
 
 function logUi(level, message, context = {}) {
   window.ccf?.log?.({
@@ -257,15 +255,7 @@ openManager.addEventListener("click", async () => {
   await window.ccf.openMascotManager();
 });
 
-windowMinimize?.addEventListener("click", async () => {
-  logUi("info", "Mascot preview minimize clicked");
-  await window.ccf.windowAction("minimize");
-});
 
-windowClose?.addEventListener("click", async () => {
-  logUi("info", "Mascot preview close clicked");
-  await window.ccf.windowAction("close");
-});
 
 previewVideo.addEventListener("loadeddata", () => {
   videoReady = true;

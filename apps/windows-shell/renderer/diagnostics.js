@@ -26,8 +26,6 @@ const mascotSlug = document.getElementById("mascotSlug");
 const installMascot = document.getElementById("installMascot");
 const mascotStatus = document.getElementById("mascotStatus");
 const mascotLibraryEl = document.getElementById("mascotLibrary");
-const windowMinimize = document.getElementById("windowMinimize");
-const windowClose = document.getElementById("windowClose");
 
 let latestMascotLibrary = null;
 let logMetadata = null;
@@ -212,13 +210,7 @@ window.ccf.onMascotLibrary((value) => {
   renderMascotLibrary(value);
 });
 
-windowMinimize?.addEventListener("click", async () => {
-  await window.ccf.windowAction("minimize");
-});
 
-windowClose?.addEventListener("click", async () => {
-  await window.ccf.windowAction("close");
-});
 
 render().catch((error) => {
   logUi("error", "Initial diagnostics render failed", {

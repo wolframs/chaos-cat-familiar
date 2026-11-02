@@ -1,6 +1,7 @@
 export * from "./approval-store.js";
 export * from "./atomic-json.js";
 export * from "./core-controller.js";
+export * from "./companion-delivery.js";
 export * from "./event-types.js";
 export * from "./file-settings-store.js";
 export * from "./hook-server.js";

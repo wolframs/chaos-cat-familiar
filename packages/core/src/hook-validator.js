@@ -1,5 +1,7 @@
 const stringFields = [
   "hook_event_name",
+  "event_id",
+  "turn_id",
   "session_id",
   "cwd",
   "permission_mode",
@@ -10,6 +12,7 @@ const stringFields = [
   "title",
   "notification_type",
   "source",
+  "integration_source",
   "reason",
   "model",
   "last_assistant_message",
@@ -34,6 +37,8 @@ export function validateHookPayload(payload) {
   if (typeof payload.hook_event_name !== "string" || payload.hook_event_name.trim() === "") {
     issues.push("hook_event_name is required");
   }
+  if(payload.backend!==undefined&&!['claude','codex'].includes(payload.backend))issues.push('backend must be claude or codex');
+  if(payload.observation_only!==undefined&&typeof payload.observation_only!=='boolean')issues.push('observation_only must be boolean');
 
   for (const field of stringFields) {
     const value = payload[field];

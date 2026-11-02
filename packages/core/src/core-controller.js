@@ -4,7 +4,7 @@ import { notificationForEvent } from "./notification-router.js";
 import { SessionStore } from "./session-store.js";
 import { InMemoryLogger } from "./logger.js";
 import { InMemoryStateStore } from "./json-state-store.js";
-import { ASSISTANT_LABEL } from "./models.js";
+import { assistantLabelOf } from "./models.js";
 
 const MAX_RETAINED_EVENTS = 200;
 const MAX_RETAINED_NOTIFICATIONS = 200;
@@ -48,6 +48,7 @@ export class CcfCoreController extends EventEmitter {
   }
 
   async ingestEvent(event) {
+    if(event.id&&this.events.some(existing=>existing.id===event.id))return this.snapshot();
     this.logger.info("hook", "Hook event ingested", {
       hookEventName: event.hookEventName,
       sessionId: event.sessionId,
@@ -238,7 +239,7 @@ export class CcfCoreController extends EventEmitter {
       approvals: this.approvals.pending.map((item) => ({
         id: item.id,
         event: item.event,
-        assistantLabel: ASSISTANT_LABEL,
+        assistantLabel: assistantLabelOf(item.event),
         collapsed: this.approvals.collapsedIds.has(item.id),
         resolvedToolUseId: item.resolvedToolUseId
       })),

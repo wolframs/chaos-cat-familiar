@@ -5,40 +5,11 @@
     <title>Chaos Cat Familiar Dashboard</title>
     <link rel="stylesheet" href="./brand-tokens.css" />
     <style>
-      body {
-        background:
-          radial-gradient(circle at top left, rgba(249, 93, 2, 0.08), transparent 26%),
-          linear-gradient(180deg, var(--ccf-page), var(--ccf-page-warm));
-      }
-
-      .window-titlebar {
-        position: sticky;
-        top: 0;
-        z-index: 10;
-        height: 40px;
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        padding-left: 16px;
-        background: #f7f4fb;
-        border-bottom: 1px solid var(--ccf-border);
-        color: var(--ccf-text-soft);
-        font-size: 12px;
-        font-weight: 700;
-        -webkit-app-region: drag;
-        user-select: none;
-      }
-
-      .window-controls { display: flex; height: 100%; -webkit-app-region: no-drag; }
-      .window-controls button { width: 44px; border: 0; border-radius: 0; background: transparent; color: inherit; padding: 0; font: inherit; }
-      .window-controls button:hover { background: #e9e0f4; }
-      .window-controls #windowClose:hover { background: #c73852; color: white; }
-      .window-controls button:focus-visible { outline: 2px solid #8a54c7; outline-offset: -3px; }
 
       .shell {
         display: grid;
         grid-template-columns: 284px minmax(0, 1fr);
-        min-height: calc(100vh - 41px);
+        min-height: calc(100vh - 44px);
       }
 
       .sidebar {
@@ -47,7 +18,7 @@
         gap: 24px;
         padding: 24px 20px;
         border-right: 1px solid var(--ccf-border);
-        background: rgba(255, 255, 255, 0.88);
+        background: var(--ccf-surface);
         backdrop-filter: blur(14px);
       }
 
@@ -107,7 +78,7 @@
       }
 
       .nav-button.active {
-        background: linear-gradient(180deg, #fff4e8, #fff0df);
+        background: var(--ccf-surface);
         border-color: var(--ccf-border-strong);
         color: var(--ccf-accent);
       }
@@ -137,7 +108,7 @@
       }
 
       .nav-button.active .nav-count {
-        background: rgba(249, 93, 2, 0.14);
+        background: rgba(206, 153, 246, 0.14);
         color: var(--ccf-accent);
       }
 
@@ -150,7 +121,7 @@
         margin-top: auto;
         padding: 18px;
         border-radius: 20px;
-        background: linear-gradient(180deg, #fff5eb, #fff);
+        background: var(--ccf-surface);
         border: 1px solid var(--ccf-border);
         box-shadow: var(--ccf-shadow);
       }
@@ -225,7 +196,7 @@
       }
 
       .item.selected {
-        background: linear-gradient(180deg, #fff5eb, #fff0e2);
+        background: var(--ccf-surface);
         border-color: var(--ccf-border-strong);
       }
 
@@ -321,6 +292,24 @@
         max-width: 280px;
       }
 
+      .setting-value.control {
+        display: flex;
+        align-items: center;
+        justify-content: flex-end;
+        gap: 10px;
+        min-width: 240px;
+      }
+
+      .setting-value.control input[type="range"] {
+        flex: 1;
+        margin: 0;
+      }
+
+      .setting-value.control output {
+        min-width: 34px;
+        font-variant-numeric: tabular-nums;
+      }
+
       .section-panel {
         padding: 20px;
       }
@@ -332,7 +321,7 @@
         padding: 28px;
         border-radius: 20px;
         border: 1px dashed var(--ccf-border-strong);
-        background: linear-gradient(180deg, #fff8f1, rgba(255, 255, 255, 0.86));
+        background: var(--ccf-surface);
       }
 
       .empty-state strong {
@@ -358,7 +347,7 @@
         gap: 6px;
         padding: 16px;
         border-radius: 18px;
-        background: linear-gradient(180deg, #fff8f2, #fff);
+        background: var(--ccf-surface);
         border: 1px solid var(--ccf-border);
       }
 
@@ -379,7 +368,7 @@
         height: 88px;
         border-radius: 22px;
         object-fit: cover;
-        background: linear-gradient(180deg, #fff4e5, #fff);
+        background: var(--ccf-surface);
         border: 1px solid var(--ccf-border);
       }
 
@@ -452,14 +441,15 @@
         }
       }
     </style>
+    <link rel="stylesheet" href="./utility-window.css" />
   </head>
   <body>
     <header class="window-titlebar">
       <span>Chaos Cat Familiar — Dashboard</span>
-      <div class="window-controls">
-        <button id="windowMinimize" aria-label="Minimize window" title="Minimize">−</button>
-        <button id="windowMaximize" aria-label="Maximize or restore window" title="Maximize or restore">□</button>
-        <button id="windowClose" aria-label="Close window" title="Close">×</button>
+      <div class="window-controls" role="group" aria-label="Window controls">
+        <button id="windowMinimize" data-window-action="minimize" aria-label="Minimize window" title="Minimize">−</button>
+        <button id="windowMaximize" data-window-action="toggle-maximize" aria-label="Maximize or restore window" title="Maximize or restore">□</button>
+        <button id="windowClose" data-window-action="close" aria-label="Close window" title="Close">×</button>
       </div>
     </header>
     <div class="shell">
@@ -478,7 +468,7 @@
         </div>
         <div class="sidebar-footer">
           <div class="ccf-chip accent">Claude Code companion</div>
-          <p>Windows keeps native launch, notification, and taskbar behavior, but the information architecture and visual language follow the SwiftUI app.</p>
+          <p>A little chaos. A clear view of your Claude Code sessions.</p>
         </div>
       </aside>
       <main>
@@ -504,6 +494,7 @@
         <div class="step-dots" id="onboardingDots"></div>
       </article>
     </section>
+    <script src="./window-controls.js"></script>
     <script type="module" src="./dashboard.js"></script>
     <script type="module" src="./design-reload.js"></script>
   </body>

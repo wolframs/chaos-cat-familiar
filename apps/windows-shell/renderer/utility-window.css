@@ -1,0 +1,90 @@
+/* Shared chrome for the tray's dashboard, settings, library and developer panes. */
+:root {
+  color-scheme: dark;
+  --bg: var(--ccf-page);
+  --ink: var(--ccf-text);
+  --text: var(--ccf-text);
+  --muted: var(--ccf-text-soft);
+  --card: var(--ccf-surface);
+  --panel: var(--ccf-surface);
+  --panel-strong: var(--ccf-surface-muted);
+  --border: var(--ccf-border);
+  --accent: var(--ccf-accent);
+}
+* { scrollbar-width: thin; scrollbar-color: #705782 transparent; }
+body {
+  min-height: 100vh;
+  padding-top: 44px;
+  background: var(--ccf-page);
+  color: var(--ccf-text);
+  font-family: var(--ccf-font-body);
+  font-size: 14px;
+  line-height: 1.5;
+}
+.window-titlebar {
+  position: fixed;
+  inset: 0 0 auto;
+  z-index: 100;
+  height: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 0 0 16px;
+  background: #140f1e;
+  border-bottom: 1px solid var(--ccf-border);
+  color: var(--ccf-text-soft);
+  font-size: 12px;
+  font-weight: 600;
+  user-select: none;
+  -webkit-app-region: drag;
+}
+.window-titlebar > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.window-titlebar > span::before {
+  content: "";
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  margin-right: 10px;
+  border-radius: 50%;
+  background: var(--ccf-accent);
+}
+.window-controls { display: flex; flex: none; height: 100%; -webkit-app-region: no-drag; }
+.window-controls button {
+  width: 46px;
+  min-height: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--ccf-text-soft);
+  font: 18px "Segoe UI", sans-serif;
+  cursor: pointer;
+}
+.window-controls button:hover { background: var(--ccf-accent-soft); color: var(--ccf-text); }
+.window-controls [data-window-action="close"]:hover { background: #a63150; color: white; }
+button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible {
+  outline: 2px solid var(--ccf-accent);
+  outline-offset: 2px;
+}
+.window-controls button:focus-visible { outline-offset: -4px; }
+button { cursor: pointer; }
+button:disabled { opacity: .45; cursor: default; }
+.primary, .ccf-button.primary { background: var(--ccf-accent); color: #1b1025; }
+.primary:hover, .ccf-button.primary:hover { background: #e6baff; }
+.secondary { background: var(--ccf-surface-muted); color: var(--ccf-text-soft); }
+.secondary:hover, .ccf-button:not(.primary):hover { background: var(--ccf-accent-soft); }
+input, select, textarea { color: var(--ccf-text); background: var(--ccf-page); border-color: var(--ccf-border); }
+input::placeholder, textarea::placeholder { color: var(--ccf-text-faint); }
+input[type="checkbox"], input[type="range"] { accent-color: var(--ccf-accent); }
+h1, h2, h3 { font-weight: 600; letter-spacing: -.025em; }
+.card { background: var(--ccf-surface); border: 1px solid var(--ccf-border); box-shadow: var(--ccf-shadow); }
+.eyebrow { background: var(--ccf-accent-soft); color: var(--ccf-accent); }
+.state-button.active .meta { color: #35203f; }
+.onboarding { inset: 44px 0 0; z-index: 20; overflow: auto; }
+@media (max-width: 760px) {
+  main { padding: 20px 16px; }
+  .hero { grid-template-columns: minmax(0, 1fr); }
+  .toolbar { grid-template-columns: minmax(0, 1fr); }
+  .hud { left: 10px; right: 10px; gap: 6px; }
+  .pill { padding: 8px; }
+}

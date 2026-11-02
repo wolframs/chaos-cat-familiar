@@ -3,39 +3,59 @@
   <head>
     <meta charset="utf-8" />
     <title>Chaos Cat Familiar Overlay</title>
+    <link rel="stylesheet" href="./brand-tokens.css" />
     <style>
       :root {
-        --bg: rgba(23, 27, 33, 0.92);
-        --panel: rgba(255, 255, 255, 0.08);
-        --text: #f7f5ef;
-        --muted: #c7c0b5;
-        --accent: #f95d02;
-        --danger: #ef4444;
-        --soft: rgba(255, 255, 255, 0.16);
+        --bg: rgba(20, 15, 30, 0.96);
+        --panel: rgba(206, 153, 246, 0.08);
+        --text: var(--ccf-text);
+        --muted: var(--ccf-text-soft);
+        --accent: var(--ccf-accent);
+        --danger: #e0626b;
+        --soft: rgba(206, 153, 246, 0.16);
+      }
+
+      html,
+      body {
+        height: 100%;
+        overflow: hidden;
       }
 
       body {
         margin: 0;
-        font-family: "Segoe UI", sans-serif;
         background: transparent;
         color: var(--text);
+        font-size: 13px;
       }
 
-      body.shell-mode-mascot {
-        overflow: hidden;
-      }
-
+      /* Developer overlay: the panel fills the frameless window and scrolls inside it. */
       .overlay {
-        margin: 16px;
-        padding: 16px;
+        height: calc(100% - 16px);
+        margin: 8px;
+        padding: 12px 14px;
+        overflow-y: auto;
+        border: 1px solid var(--ccf-border);
         border-radius: 18px;
-        background: linear-gradient(135deg, var(--bg), rgba(249, 93, 2, 0.35));
-        box-shadow: 0 18px 40px rgba(0, 0, 0, 0.35);
-        backdrop-filter: blur(18px);
+        background: linear-gradient(160deg, var(--bg), rgba(48, 33, 63, 0.96));
+        box-shadow: 0 10px 24px rgba(0, 0, 0, 0.35);
+        scrollbar-width: thin;
+        scrollbar-color: #705782 transparent;
+      }
+
+      .overlay > .row:first-of-type {
+        -webkit-app-region: drag;
+        cursor: move;
+      }
+
+      .overlay > .row:first-of-type .pill {
+        -webkit-app-region: no-drag;
       }
 
       body.shell-mode-mascot .overlay {
         width: 136px;
+        height: auto;
+        overflow: visible;
+        border: 0;
         margin: 12px;
         padding: 0;
         border-radius: 0;
@@ -53,10 +73,10 @@
 
       .hero {
         display: grid;
-        grid-template-columns: 104px minmax(0, 1fr);
-        gap: 14px;
+        grid-template-columns: 72px minmax(0, 1fr);
+        gap: 12px;
         align-items: center;
-        margin-top: 14px;
+        margin-top: 10px;
       }
 
       body.shell-mode-mascot .hero {
@@ -68,10 +88,10 @@
 
       .mascot-shell {
         position: relative;
-        width: 104px;
-        height: 104px;
-        border-radius: 20px;
-        background: radial-gradient(circle at 30% 20%, rgba(255, 255, 255, 0.2), rgba(255, 255, 255, 0.04) 52%, rgba(0, 0, 0, 0.18) 100%);
+        width: 72px;
+        height: 72px;
+        border-radius: 16px;
+        background: radial-gradient(circle at 30% 20%, rgba(206, 153, 246, 0.2), rgba(206, 153, 246, 0.04) 52%, rgba(0, 0, 0, 0.18) 100%);
         overflow: hidden;
         box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.12);
       }
@@ -97,8 +117,8 @@
         content: "";
         position: absolute;
         inset: 0;
-        border: 1px solid rgba(255, 255, 255, 0.08);
-        border-radius: 20px;
+        border: 1px solid var(--ccf-border);
+        border-radius: 16px;
         pointer-events: none;
       }
 
@@ -134,8 +154,8 @@
       }
 
       .title {
-        font-size: 18px;
-        font-weight: 700;
+        font-size: 16px;
+        font-weight: 600;
       }
 
       .subtitle {
@@ -154,7 +174,7 @@
         display: grid;
         grid-template-columns: repeat(3, minmax(0, 1fr));
         gap: 8px;
-        margin-top: 12px;
+        margin-top: 10px;
       }
 
       .stat {
@@ -188,7 +208,7 @@
       button {
         border: 0;
         border-radius: 999px;
-        padding: 8px 12px;
+        padding: 6px 11px;
         cursor: pointer;
       }
 
@@ -227,7 +247,7 @@
 
       .allow {
         background: var(--accent);
-        color: white;
+        color: #1d1728;
       }
 
       .deny {
@@ -237,15 +257,32 @@
 
       .defer,
       .secondary {
-        background: rgba(255, 255, 255, 0.12);
+        background: var(--soft);
         color: var(--text);
       }
 
-      #approvals:empty::before {
-        content: "No pending approvals.";
-        display: block;
-        margin-top: 14px;
-        color: var(--muted);
+      .overlay-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-start;
+        gap: 8px;
+      }
+
+      .overlay-header .subtitle {
+        overflow-wrap: anywhere;
+      }
+
+      .command-preview {
+        margin-top: 6px;
+        padding: 6px 8px;
+        border-radius: 8px;
+        background: rgba(0, 0, 0, 0.25);
+        font-family: "Cascadia Mono", Consolas, monospace;
+        font-size: 12px;
+        white-space: pre-wrap;
+        overflow-wrap: anywhere;
+        max-height: 96px;
+        overflow-y: auto;
       }
 
       .hero-state {
@@ -253,7 +290,7 @@
         margin-top: 8px;
         padding: 5px 10px;
         border-radius: 999px;
-        background: rgba(255, 255, 255, 0.12);
+        background: var(--soft);
         font-size: 12px;
       }
 
@@ -265,7 +302,7 @@
 
       .hero-hint {
         margin-top: 8px;
-        color: #ffd7b8;
+        color: var(--ccf-warning);
         font-size: 12px;
       }
 
@@ -274,8 +311,8 @@
       .expanded-approval,
       .context-panel,
       .stats-pill {
-        border: 1px solid rgba(255, 255, 255, 0.1);
-        background: rgba(12, 15, 21, 0.92);
+        border: 1px solid var(--ccf-border);
+        background: rgba(16, 13, 24, 0.94);
         backdrop-filter: blur(16px);
         box-shadow: 0 16px 36px rgba(0, 0, 0, 0.28);
       }
@@ -343,7 +380,7 @@
       }
 
       .switcher-row.active {
-        background: rgba(249, 93, 2, 0.18);
+        background: var(--ccf-accent-strong);
       }
 
       .approval-toolbar,
@@ -400,6 +437,10 @@
         </div>
         <div class="pill" id="collapsed">0 deferred</div>
       </div>
+      <section class="context-panel" id="contextPanel"></section>
+      <!-- Pending decisions first: the window is small and these need the user. -->
+      <section id="approvals"></section>
+      <section class="expanded-approval" id="expandedApproval"></section>
       <section class="hero">
         <div class="mascot-shell">
           <video class="mascot-media" id="mascotVideo" muted playsinline></video>
@@ -426,9 +467,6 @@
         <button class="secondary" id="openPreview">Demo mascot</button>
         <button class="secondary" id="connectClaude">Open dashboard</button>
       </section>
-      <section id="approvals"></section>
-      <section class="expanded-approval" id="expandedApproval"></section>
-      <section class="context-panel" id="contextPanel"></section>
     </main>
     <script type="module" src="./overlay.js"></script>
     <script type="module" src="./design-reload.js"></script>

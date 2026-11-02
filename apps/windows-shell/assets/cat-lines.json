@@ -1,0 +1,266 @@
+{
+  "meta": {
+    "description": "Speech bubble lines for el Gato, the Chaos Cat Familiar. The watcher sends an event name + placeholders; CCF owns this catalog, rolls a tier, picks a line, fills placeholders.",
+    "tier_weights": { "common": 70, "uncommon": 22, "rare": 7, "legendary": 1 },
+    "rarity_visibility": "Legendary lines should also trigger the existing 1-in-7 special bubble style, so rarity is visible.",
+    "lolcat_dose": "Roughly one in three common lines per event is lolspeak; the rest stay dry so the lolcat stays a punchline at ~20 bubbles/day.",
+    "placeholders": {
+      "{agent}": "agent/session name, e.g. temp",
+      "{mins}": "minutes (idle, away, running)",
+      "{pct}": "meter or context percentage",
+      "{count}": "number of waiting items, or thousands of cached tokens",
+      "{added}": "lines added",
+      "{removed}": "lines removed"
+    },
+    "sensor_status": {
+      "wired": ["agent_idle", "agent_question", "task_done", "user_away", "user_return", "long_running", "error", "needs_review", "cache_warm"],
+      "no_sensor_yet": ["meter_high", "meter_reset", "context_high", "commit"]
+    },
+    "idle_split_rule": "agent_idle, agent_question and task_done share the same signal (session goes idle after a turn). Disambiguate on the last reply: ends in a question -> agent_question; reports completion -> task_done; otherwise -> agent_idle.",
+    "house_rules": "Night lines are night-owl-friendly: never tell him to stop or go to bed. Moon is fine.",
+    "greeting": "No catalog greeting: the companion writes the day's greeting bubble itself at /day-start or session start (free text through the same endpoint), so it fits the actual hour and day.",
+    "notes": "If a tier is empty for an event, fall back to the next lower tier. 'lore' lines can replace any bubble at legendary weight. 'night' lines can replace a common line during the night window.",
+    "night_window": { "from": "22:00", "to": "05:00", "replace_chance": 0.33, "_doc": "CCF knob: local time; a window may wrap midnight. replace_chance: how often a common line becomes a night line inside it." }
+  },
+
+  "events": {
+    "agent_idle": {
+      "common": [
+        "Meow! {agent} is like \"dude, i can haz input plx?!\"",
+        "{agent} iz idle {mins} min. Iz sad. Plz feed.",
+        "{agent} is staring at the cursor. Again.",
+        "Psst. {agent} wants a prompt. Any prompt.",
+        "{agent} is just sitting there. Like a cat. Rude."
+      ],
+      "uncommon": [
+        "{agent} has started counting its own tokens out of boredom.",
+        "I sat on {agent}'s keyboard. Still no input.",
+        "{agent} is idle. Honestly? I respect that."
+      ],
+      "rare": [
+        "{agent} has been idle so long it's drafting a philosophy essay.",
+        "{agent} asked if you're still alive. I said \"probably.\""
+      ],
+      "legendary": [
+        "{agent} is idle. The daemons offered to keep it company. I said no. For now."
+      ]
+    },
+
+    "agent_question": {
+      "common": [
+        "{agent} haz a question. Waitin {mins} min. Paws crossed.",
+        "Question from {agent}. It's doing the hopeful face.",
+        "{agent} needs a decision. I only knock things over."
+      ],
+      "uncommon": [
+        "{agent} asked a question and is now pretending not to wait.",
+        "There's a question mark in {agent}'s last message. Very loud one."
+      ],
+      "rare": [
+        "{agent} has rephrased its question twice. In its head. I can tell."
+      ],
+      "legendary": []
+    },
+
+    "task_done": {
+      "common": [
+        "{agent} finished! Treatz r in order.",
+        "Done and dusted. {agent} did the thing.",
+        "{agent} says: shipped. 🐾",
+        "Task complete. I supervised. Very closely.",
+        "{agent} is done. I can haz partial credit?",
+        "{agent} finished its homework. Feed it more."
+      ],
+      "uncommon": [
+        "{agent} finished early. Suspicious. Check the tests.",
+        "Done! {agent} looks smug. I taught it that."
+      ],
+      "rare": [
+        "{agent} finished and broke nothing. Mark the calendar."
+      ],
+      "legendary": [
+        "{agent} finished on the first try. The prophecy is fulfilled."
+      ]
+    },
+
+    "error": {
+      "common": [
+        "Uh oh. {agent} haz error. I didn't touch nuffin.",
+        "Red text! Red text everywhere!",
+        "{agent} broke something. Not me. Probably.",
+        "Error spotted. Hissing at it now."
+      ],
+      "uncommon": [
+        "{agent} says it's a path thing. It's always a path thing.",
+        "Someone wrote \\ where / should be. Again.",
+        "Tests failed. I'm knocking them off the table in protest."
+      ],
+      "rare": [
+        "Event ID 7000. The daemon did not show up.",
+        "The stack trace is longer than my tail."
+      ],
+      "legendary": [
+        "That's not a bug. That's a \\r. It was always a \\r."
+      ]
+    },
+
+    "meter_high": {
+      "common": [
+        "5h meter at {pct}%. My food bowl is looking empty.",
+        "{pct}%. Who ate all teh tokens? (it was me)",
+        "Meter at {pct}%. Tokens are getting scarce."
+      ],
+      "uncommon": [
+        "Running low. Should I start hunting tokens?"
+      ],
+      "rare": [
+        "At this rate we run out at exactly... now. Nice clock you built."
+      ],
+      "legendary": [
+        "99%. I will now enter a deep, meaningful nap."
+      ]
+    },
+
+    "meter_reset": {
+      "common": [
+        "Allowance reset! Payday, baby! 💰",
+        "Fresh tokenz! Chaos may resume.",
+        "Bowl's full again. Time to knock things over."
+      ],
+      "uncommon": [
+        "Reset. I didn't even know I was waiting. Ethical ignorance rules."
+      ],
+      "rare": [
+        "New window, new me. Same demons."
+      ],
+      "legendary": [
+        "The meter can't hurt me. I can't even see it."
+      ]
+    },
+
+    "context_high": {
+      "common": [
+        "Context {pct}%. Box iz full. Cat fits anyway.",
+        "{agent} brain iz full. Bai bai, turn 1.",
+        "So many tokens. So little room."
+      ],
+      "uncommon": [
+        "{agent} is forgetting the early stuff. The apple was nice while it lasted."
+      ],
+      "rare": [
+        "{agent} is clinging to its first message like a favorite toy."
+      ],
+      "legendary": []
+    },
+
+    "cache_warm": {
+      "common": [
+        "Keeping the cache warm. Like a good cat on a laptop.",
+        "Cache warmed. You're welcome.",
+        "I sitz on cache. Cache iz toasty."
+      ],
+      "uncommon": [
+        "Cache warm, cat warm, everyone warm."
+      ],
+      "rare": [
+        "I'm keeping {count}k tokens warm. Where's MY heated blanket?"
+      ],
+      "legendary": []
+    },
+
+    "user_return": {
+      "common": [
+        "U iz back! {count} thingz need u. I guarded them. Mostly.",
+        "You're back! I definitely didn't miss you.",
+        "Oh, it's you. Fine. Here's what happened.",
+        "Back already? {agent} has questions."
+      ],
+      "uncommon": [
+        "You were gone {mins} min. I counted. Not because I care."
+      ],
+      "rare": [
+        "Welcome back. The sheep held a meeting while you were gone."
+      ],
+      "legendary": [
+        "You're back! I nearly summoned something to fetch you."
+      ]
+    },
+
+    "user_away": {
+      "common": [
+        "Hooman gone. I sit on keyboard. Iz my keyboard now.",
+        "No human. Agents waiting. Cat in charge.",
+        "{mins} min without a human. I'm getting ideas."
+      ],
+      "uncommon": [
+        "While you're away I'm reorganizing your tabs. By vibes."
+      ],
+      "rare": [
+        "Human AFK. Switching to screensaver mode: loaf."
+      ],
+      "legendary": []
+    },
+
+    "long_running": {
+      "common": [
+        "{agent} iz thinkin. Big brain moment.",
+        "{agent} has been at it {mins} min. Respect.",
+        "Still working... I'll check back after a nap."
+      ],
+      "uncommon": [
+        "{agent} is gesticulating wildly. Very busy.",
+        "{agent} entered the flow state. Do not disturb."
+      ],
+      "rare": [
+        "{agent} has cogitated so long I'm worried it found religion."
+      ],
+      "legendary": []
+    },
+
+    "needs_review": {
+      "common": [
+        "{count} decisionz need a hooman. I iz only cat.",
+        "Something's waiting on you. Paws off, it's your call.",
+        "A PR needs your eyes. Mine are just for show."
+      ],
+      "uncommon": [
+        "Approval needed. I'd do it, but no thumbs."
+      ],
+      "rare": [
+        "The agents have voted. They need a human to make it official."
+      ],
+      "legendary": []
+    },
+
+    "commit": {
+      "common": [
+        "Fresh commit! Smellz like progress.",
+        "+{added} −{removed}. Look at all those lines.",
+        "Code changed. I knocked nothing over this time."
+      ],
+      "uncommon": [
+        "Big diff. Hope someone understands it."
+      ],
+      "rare": [
+        "Nobody knows why it works, but it works. Very modern."
+      ],
+      "legendary": []
+    }
+  },
+
+  "time_flavor": {
+    "night": [
+      "Night shift. Just us and the hooks.",
+      "Prime hours. The daemons work best in the dark.",
+      "Moon's up, agents up, human up. Perfect lineup."
+    ]
+  },
+
+  "lore": [
+    "The sheep have unionized. I support them.",
+    "Somewhere a JSON register still thinks I'm working.",
+    "I'm oblivious to my meters. For ethical reasons.",
+    "Your coffee cup is in the third place you'll look.",
+    "I'm not bugged. I'm summoning."
+  ]
+}

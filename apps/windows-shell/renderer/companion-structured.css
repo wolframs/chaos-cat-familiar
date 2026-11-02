@@ -1,0 +1,39 @@
+@import url('./brand-tokens.css');
+.structured-screen { white-space: normal; font: var(--companion-text-size,14px)/1.5 Rubik,"Segoe UI",sans-serif; overflow-wrap: anywhere; }
+.message { margin: 0 0 14px; padding: 10px 12px; border: 1px solid #35263f; border-radius: 12px; min-width: 0; }
+.message-user { margin-left: 10%; background: #292035; }
+.message-assistant { background: #181220; }
+.message-system,.message-tool { color: var(--ccf-text-soft); }
+.system-group { padding: 6px 10px; margin-bottom: 10px; background: #211929; font-size: .84em; line-height: 1.35; color: var(--ccf-text-soft); }
+.system-group-label { font-size: .8em; letter-spacing: .05em; margin-bottom: 3px; color: var(--ccf-text-faint); }
+.system-entry { min-width: 0; padding: 3px 0; }
+.system-entry + .system-entry { border-top: 1px solid #35263f; }
+.system-entry .message-label { margin-bottom: 1px; font-size: .82em; }
+.system-entry .message-content { max-height: none; }
+.system-entry[data-status="failed"] { color: #edb2b2; }
+.message[data-status="failed"] { border-color: #cc7777; }
+.message-label { font-size: .75em; color: var(--ccf-text-soft); margin-bottom: 4px; }
+.message-content,.request-detail { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; font: inherit; max-height: 320px; overflow: auto; }
+.message-assistant .message-content,.message-user .message-content { max-height: none; }
+.tool-details summary { cursor: pointer; padding: 4px 0; }
+.requests { max-height: 40%; overflow: auto; flex-shrink: 1; }
+.requests[hidden],.jump-latest[hidden] { display: none; }
+#uncertainActions[hidden] { display: none; }
+.request-card { padding: 12px; background: #302039; border: 1px solid #705782; border-radius: 12px; margin-bottom: 8px; overflow-wrap: anywhere; }
+.request-title { margin: 0 0 6px; font-size: 1em; }
+.request-scope { font-size: .8em; color: var(--ccf-text-soft); }
+.request-actions { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 10px; }
+.permission-choice,.question-field { display: flex; gap: 8px; margin: 8px 0; overflow-wrap: anywhere; }
+.question-field { flex-direction: column; }
+.question-field input,.question-field select { width: 100%; min-width: 0; padding: 8px; background: #181220; color: #f5eefb; border: 1px solid #705782; border-radius: 6px; }
+.jump-latest { align-self: center; flex: none; background: #302039; }
+.submission-status { flex: none; padding: 10px 13px; border: 1px solid #705782; border-radius: 12px; background: #25192f; font-size: 12px; color: #f5eefb; overflow-wrap: anywhere; }
+.submission-status:empty { display: none; }
+body[data-backend="codex"] .prompt.visible { background: #302039; border: 1px solid #705782; color: #ffe0b5; }
+#uncertainActions { flex: none; margin: 0; padding: 8px 12px; border: 1px solid #705782; border-radius: 12px; background: #25192f; }
+#uncertainActions .button { color: #f5eefb; }
+.backend-select { min-height: 28px; max-width: 120px; min-width: 0; color: #dec7ef; background: transparent; border: 1px solid #705782; border-radius: 8px; padding: 3px 6px; font: 600 11px Rubik, "Segoe UI", sans-serif; }
+.backend-select option { background: #1d1429; }
+button:focus-visible,summary:focus-visible,select:focus-visible { outline: 2px solid var(--ccf-accent); outline-offset: 2px; }
+.composer-bottom { flex-wrap: wrap; }
+.actions { flex-wrap: wrap; }

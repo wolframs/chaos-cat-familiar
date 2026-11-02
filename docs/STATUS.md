@@ -1,9 +1,37 @@
 # Status
 
-As of 2026-10-27. Dev-run only: no installer, no packaged build has been tested.
+As of 2026-11-02. Dev-run only: no installer, no packaged build has been tested.
 
 ## Where it stands
 
+- Cat speech bubbles: the work companion's watcher can post `POST /companion/bubble`, and the
+  cat says it in a bubble above its head. A request carries free text, or an event name with
+  placeholders; CCF then picks the line from its catalog (`assets/cat-lines.json`) by rarity
+  tier, with lore and night lines. Six bubble styles, a 1-in-7 special entrance (legendary lines
+  always get it), and bubbles stack until each is clicked. Covered by unit, runtime and smoke tests.
+- Http hooks: routine Claude events reach CCF as Claude Code http hooks, with no Git Bash +
+  PowerShell process per event (a sender start cost ~2.6 s and ~0.7 CPU-s on a busy laptop).
+  The sender stays for `SessionStart`, `UserPromptSubmit` and `PermissionRequest` (shell PID,
+  blocking reply). `POST /hook` answers routine events before ingesting them, and `state.json`
+  is checkpointed every 2 s instead of every 250 ms; stop and exit still flush.
+- Codex companion: the companion pane can run `codex app-server` as a plain child with the
+  user's own config, show the conversation, route approvals, and switch backends while idle.
+  Codex hooks feed observation of other Codex sessions; they are installed only from Settings,
+  never on start. Tested with fakes and the real hook sender/server; no live Codex run yet.
+  See [operations](CODEX-COMPANION-OPERATIONS.md) and the [contract](CODEX-COMPANION-CONTRACT-v1.md).
+- Open: the cat flickers now and then, trigger unknown. The overlay logs
+  `Mascot state flipped and came back` (warn, category overlay-ui) with each step's inputs and
+  sessions, to be removed (`noteMascotFlip` in `renderer/overlay.js`) once the cause is fixed.
+- The Claude approval banner says to answer in Claude's menu with ↑ ↓ and Enter, and to clear
+  the input first when it holds a draft (keys reach Claude only from an empty input).
+- The developer overlay opens at its own size instead of inheriting the mascot's bounds, fits
+  and scrolls inside the window, puts pending approvals first, drags by its header, and opens
+  its controls panel on right-click. Dashboard Settings puts the shell-mode, opacity and scale
+  controls in their rows and no longer re-renders a slider mid-drag.
+- Tray panes (dashboard/settings, mascot library, preview, diagnostics) share the companion's
+  dark plum/lilac palette and Rubik typography, each with a draggable titlebar and minimize,
+  maximize/restore and close controls. `npm run smoke:utility-panes` checks these in an
+  isolated Electron profile.
 - The tray now uses a purple pixel cat ICO with Windows DPI sizes. Show/Hide Companion
   controls the complete cluster without starting or stopping Claude; Settings opens
   directly in the dashboard. Diagnostics, preview and mode choices live under Advanced.
@@ -16,10 +44,10 @@ As of 2026-10-27. Dev-run only: no installer, no packaged build has been tested.
 - State checkpoints and ordinary file logs batch over 250 ms, with bounded log buffers
   and an unclean-run marker. Terminal snapshots coalesce over 33 ms; the renderer
   retains unchanged rows and scrollback instead of rebuilding them on each update.
-- The full serial test suite passes 308 tests; the isolated Electron smoke test passes.
 - Core (`packages/core`): hook server, sessions, approvals, notification routing. Covered by automated tests; real Claude-session validation remains outstanding.
 - Shell (`apps/windows-shell`): tray, overlay, dashboard, diagnostics, mascots. Claude Code
-  only; Codex and Copilot support was cut on 2026-10-16. Runs with `npm run start:windows-shell`.
+  remains the default; hosted Codex is opt-in with explicit source/data/auth/model settings.
+  Copilot remains excluded. Runs with `npm run start:windows-shell`.
 - Chaos Cat Familiar v0.3 is the bundled default mascot: four local transparent loops and all
   12 directed handoffs. Existing profiles using the former bundled Masko default migrate once;
   explicitly selected alternatives remain selected. Visible Idle and approval states now animate
@@ -109,7 +137,10 @@ validate protocol activation, startup and uninstall against an installed build. 
   [installation notes](../extensions/vscode/README.md). The sender now resolves the persistent shell above Claude instead of its own PID.
   Window activation prefers that shell's ancestor window, then a project/title match. Exact tab
   activation remains unconfirmed; helper installation alone is not proof of success.
-- Hooks: PowerShell sender only. CMD, Git Bash and WSL launches of Claude are untested.
+- Hooks: http hooks for routine events, the PowerShell sender for the three that need a shell PID
+  or a blocking reply. CMD, Git Bash and WSL launches of Claude are untested. While CCF is not
+  running, each routine event shows Claude's "hook error" notice (connection refused); the tool
+  call still proceeds.
 - Hotkeys are `Ctrl+...` combinations; the macOS double-tap gestures were dropped on purpose.
 
 ## Packaging (untested)
@@ -125,7 +156,8 @@ dev Electron path, so remove `HKCU\Software\Classes\ccf` by hand if it misbehave
 - `%APPDATA%\chaos-cat-familiar\` settings, state, mascots, mascot video cache
 - `%USERPROFILE%\.chaos-cat-familiar\hooks\hook-sender.ps1`
 - hook entries in `%USERPROFILE%\.claude\settings.json`, written on every start if missing or
-  drifted (removal touches only entries that point at the sender above). Test runs: see AGENTS.md.
+  drifted (removal touches only entries that point at the sender above, or http hooks to
+  `127.0.0.1:<port>/hook` carrying an `X-Ccf-Token` header). Test runs: see AGENTS.md.
 - `HKCU\Software\Classes\ccf` and, if enabled, a login item
 
 Before cleanup, disable launch at login in Settings and quit CCF. Then run
@@ -152,8 +184,7 @@ Other brand assets still need attention:
 
 - `apps/windows-shell/assets/ccf-logo.svg` is a plain placeholder.
 - `packaging/windows/assets/pixel-art/` is a generated placeholder sprite, the MSIX tiles derive from it.
-- The `--ccf-*` brand tokens in `renderer/brand-tokens.css` still carry Masko's palette (orange
-  `#f95d02`), restyle them with the art.
+- The `--ccf-*` brand tokens in `renderer/brand-tokens.css` use the companion's plum/lilac palette.
 - Fonts (Fredoka, Rubik, in `assets/fonts/`) are Google Fonts under the SIL Open Font License. Each
   family's licence text sits beside its files (`OFL-Fredoka.txt`, `OFL-Rubik.txt`).
 

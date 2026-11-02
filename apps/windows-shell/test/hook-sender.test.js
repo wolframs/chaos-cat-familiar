@@ -18,7 +18,7 @@ function fixture(t, settings = { port: 49152 }) {
 }
 
 test("installer replaces owned legacy hooks, preserves other hooks and skips unchanged settings", async (t) => {
-  const { home, service } = fixture(t);
+  const { home, service } = fixture(t, { port: 49152, hookToken: "fixture-token" });
   const settingsPath = path.join(home, ".claude", "settings.json");
   const hookPath = path.join(home, ".chaos-cat-familiar", "hooks", "hook-sender.ps1");
   const legacy = { type: "command", command: `powershell -File "${hookPath}"` };
@@ -34,8 +34,16 @@ test("installer replaces owned legacy hooks, preserves other hooks and skips unc
   assert.deepEqual(parsed.env, { KEEP: "yes" });
   assert.deepEqual(parsed.hooks.WorktreeCreate, [{ hooks: [other] }]);
   assert.equal(parsed.hooks.WorktreeRemove, undefined);
+  const commandEvents = ["SessionStart", "UserPromptSubmit", "PermissionRequest"];
   for (const [event, entries] of Object.entries(parsed.hooks)) {
-    for (const hook of entries.flatMap((entry) => entry.hooks).filter((hook) => hook.command.includes(hookPath))) {
+    if (event === "WorktreeCreate") continue;
+    // One CCF hook per event, in the same {matcher, hooks} shape for both transports.
+    assert.deepEqual(entries.map((entry) => entry.matcher), [""], event);
+    const [hook] = entries[0].hooks;
+    assert.equal(entries[0].hooks.length, 1, event);
+    if (commandEvents.includes(event)) {
+      assert.equal(hook.type, "command");
+      assert.ok(hook.command.includes(hookPath));
       assert.match(hook.command, /powershell -NoProfile -NonInteractive -ExecutionPolicy Bypass/);
       if (event === "PermissionRequest") {
         assert.equal(hook.async, undefined);
@@ -43,12 +51,74 @@ test("installer replaces owned legacy hooks, preserves other hooks and skips unc
       } else {
         assert.equal(hook.async, true);
       }
+    } else {
+      // Routine events go straight to the hook server: no Git Bash, no PowerShell process.
+      assert.deepEqual(hook, { type: "http", url: "http://127.0.0.1:49152/hook",
+        headers: { "X-Ccf-Token": "fixture-token" }, timeout: 5 }, event);
     }
   }
+  assert.deepEqual(Object.keys(parsed.hooks).filter((event) => event !== "WorktreeCreate").sort(), [
+    "ConfigChange", "Notification", "PermissionRequest", "PostToolUse", "PostToolUseFailure", "PreCompact",
+    "PreToolUse", "SessionEnd", "SessionStart", "Stop", "SubagentStart", "SubagentStop", "TaskCompleted",
+    "TeammateIdle", "UserPromptSubmit"
+  ]);
   const before = fs.statSync(settingsPath).mtimeMs;
   await service.install();
   assert.equal(fs.readFileSync(settingsPath, "utf8"), raw);
   assert.equal(fs.statSync(settingsPath).mtimeMs, before);
+});
+
+test("diagnose treats http hooks as CCF-owned, flags token and port drift, and install/uninstall rewrite only CCF entries", async (t) => {
+  const health = http.createServer((_req, res) => res.end("ok"));
+  await new Promise((resolve) => health.listen(0, "127.0.0.1", resolve));
+  t.after(() => new Promise((resolve) => health.close(resolve)));
+  const settings = { port: health.address().port, hookToken: "token-a" };
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), "ccf-http-hooks-"));
+  t.after(() => fs.rmSync(home, { recursive: true, force: true }));
+  const service = new ElectronHookInstallationService({ getHomePath: () => home }, { load: () => settings });
+  const settingsPath = path.join(home, ".claude", "settings.json");
+  const foreign = { type: "http", url: "http://127.0.0.1:9999/elsewhere", headers: { "X-Other": "1" } };
+  fs.mkdirSync(path.dirname(settingsPath), { recursive: true });
+  fs.writeFileSync(settingsPath, JSON.stringify({ hooks: { PreToolUse: [{ matcher: "Bash", hooks: [foreign] }] } }));
+  const httpEvents = ["ConfigChange", "Notification", "PostToolUse", "PostToolUseFailure", "PreCompact", "PreToolUse",
+    "SessionEnd", "Stop", "SubagentStart", "SubagentStop", "TaskCompleted", "TeammateIdle"];
+  const ccfHooks = () => Object.fromEntries(Object.entries(JSON.parse(fs.readFileSync(settingsPath, "utf8")).hooks)
+    .map(([event, entries]) => [event, entries.flatMap((entry) => entry.hooks)
+      .filter((hook) => hook.type === "http" ? hook.url.endsWith("/hook") : true)]));
+
+  const installed = await service.install();
+  assert.equal(installed.registeredEvents.length, 15);
+  let diagnosis = await service.diagnose({ detailed: false });
+  assert.equal(diagnosis.drift.healthy, true, JSON.stringify(diagnosis.drift));
+  assert.doesNotMatch(JSON.stringify(diagnosis.drift), /token-a/, "drift diagnostics never echo the token");
+
+  settings.hookToken = "token-b";
+  diagnosis = await service.diagnose({ detailed: false });
+  assert.equal(diagnosis.drift.healthy, false);
+  assert.deepEqual([...diagnosis.drift.registrationMismatch].sort(), httpEvents);
+  assert.deepEqual(diagnosis.drift.missingEvents, []);
+  assert.deepEqual(diagnosis.drift.unexpectedCommands, []);
+  await service.install();
+  diagnosis = await service.diagnose({ detailed: false });
+  assert.equal(diagnosis.drift.healthy, true);
+  for (const event of httpEvents) {
+    assert.deepEqual(ccfHooks()[event], [{ type: "http", url: `http://127.0.0.1:${settings.port}/hook`,
+      headers: { "X-Ccf-Token": "token-b" }, timeout: 5 }], event);
+  }
+  const preToolUse = JSON.parse(fs.readFileSync(settingsPath, "utf8")).hooks.PreToolUse;
+  assert.deepEqual(preToolUse[0], { matcher: "Bash", hooks: [foreign] });
+
+  // A port the server no longer listens on is drift too.
+  const raw = JSON.parse(fs.readFileSync(settingsPath, "utf8"));
+  raw.hooks.Stop[0].hooks[0].url = "http://127.0.0.1:1/hook";
+  fs.writeFileSync(settingsPath, JSON.stringify(raw));
+  diagnosis = await service.diagnose({ detailed: false });
+  assert.deepEqual(diagnosis.drift.registrationMismatch, ["Stop"]);
+
+  const removed = await service.uninstall();
+  assert.equal(removed.changed, true);
+  const after = JSON.parse(fs.readFileSync(settingsPath, "utf8"));
+  assert.deepEqual(after.hooks, { PreToolUse: [{ matcher: "Bash", hooks: [foreign] }] });
 });
 
 test("generated PowerShell 5.1 sender preserves decisions and UTF-8 over actual pipes and HTTP", { skip: process.platform !== "win32", timeout: 90000 }, async (t) => {

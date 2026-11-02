@@ -3,8 +3,32 @@ import assert from "node:assert/strict";
 import {
   normalizeCompanionSnapshot,
   normalizeSubmission,
+  submissionStatusText,
   shouldSubmitOnKeydown
 } from "../renderer/companion-conversation-model.js";
+import * as conversationModel from '../renderer/companion-conversation-model.js';
+
+test('backend switching is offered while idle and explains active or uncertain work instead of requiring disconnection',()=>{
+  for(const backend of ['claude','codex']){
+    const idle=normalizeCompanionSnapshot({backend,connected:true,phase:'idle'});
+    assert.equal(conversationModel.backendSwitchGuard(idle).allowed,true);
+    for(const changes of [{phase:'working'},{phase:'attention'},{pendingRequests:[{key:'approval'}]},{submission:{state:'pending'}},{submission:{state:'outcomeUnknown'}},{phase:'connecting'},{starting:true},{switching:true}]){
+      const guard=conversationModel.backendSwitchGuard(normalizeCompanionSnapshot({...idle,...changes}));
+      assert.equal(guard.allowed,false);assert.ok(guard.reason.length);
+    }
+    assert.equal(conversationModel.backendSwitchGuard(idle,{busy:true}).allowed,false);
+    assert.equal(conversationModel.backendSwitchGuard(idle,{attaching:true}).allowed,false);
+    assert.equal(conversationModel.backendSwitchGuard(normalizeCompanionSnapshot({backend,connected:false})).allowed,true);
+  }
+});
+
+test('acceptance is quiet by default and visible only with the explicit debug UI flag',()=>{
+  const accepted={backend:'codex',connected:true,phase:'idle',submission:{state:'accepted'}};
+  assert.equal(submissionStatusText(normalizeCompanionSnapshot(accepted)),'');
+  assert.equal(submissionStatusText(normalizeCompanionSnapshot({...accepted,debugUi:true})),'Message accepted.');
+  assert.equal(submissionStatusText(normalizeCompanionSnapshot({...accepted,debugUi:'true'})),'');
+  for(const state of ['pending','rejected','outcomeUnknown'])assert.ok(submissionStatusText(normalizeCompanionSnapshot({...accepted,submission:{state}})).length);
+});
 
 test("conversation snapshot preserves readable transcript and a separate streaming reply", () => {
   const snapshot = normalizeCompanionSnapshot({
@@ -26,6 +50,23 @@ test("conversation snapshot preserves readable transcript and a separate streami
     ["assistant", "First answer"]
   ]);
   assert.equal(snapshot.liveText, "Still checking…");
+});
+
+test('Codex snapshots retain identity, requests and uncertainty separately from Claude terminal', () => {
+  const snapshot = normalizeCompanionSnapshot({backend:'codex',connected:true,phase:'idle',conversationId:'fork',sessionRootId:'root',connectionEpoch:3,
+    submission:{id:'s1',state:'outcomeUnknown'},pendingRequests:[{key:'request',method:'unknown',supported:false}],messages:[{id:'tool',role:'tool',text:'output',status:'failed',outputLimited:true}]});
+  assert.equal(snapshot.backend,'codex'); assert.equal(snapshot.conversationId,'fork');
+  assert.equal(snapshot.submission.state,'outcomeUnknown'); assert.equal(snapshot.pendingRequests[0].key,'request');
+  assert.equal(snapshot.messages[0].status,'failed');
+});
+
+test('structured backend errors retain actionable recovery without exposing arbitrary actions',()=>{
+  const snapshot=normalizeCompanionSnapshot({backend:'codex',error:'Authentication required',errorInfo:{code:'missing-auth',reason:'Use the configured authentication source',actions:['open-settings','start','untrusted-action']}});
+  assert.deepEqual(snapshot.errorInfo,{code:'missing-auth',reason:'Use the configured authentication source',actions:['open-settings','start']});
+  const unbound=normalizeCompanionSnapshot({backend:'codex',connected:false,error:'An earlier unbound launch needs explicit recovery'});
+  assert.ok(unbound.errorInfo.actions.includes('recover-launch'));
+  const bound=normalizeCompanionSnapshot({backend:'codex',connected:false,conversationId:'known-thread',error:'Connection lost'});
+  assert.equal(bound.errorInfo.actions.includes('recover-launch'),false);
 });
 
 test("conversation snapshot rejects unsupported roles and handles offline state", () => {

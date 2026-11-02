@@ -1,5 +1,6 @@
 param(
-    [string]$SettingsPath = [IO.Path]::Combine($env:APPDATA, 'chaos-cat-familiar', 'settings.json')
+    [string]$SettingsPath = [IO.Path]::Combine($env:APPDATA, 'chaos-cat-familiar', 'settings.json'),
+    [ValidateSet('claude', 'codex')][string]$Backend
 )
 
 # The work-companion shortcut calls this instead of opening a Windows Terminal
@@ -54,6 +55,10 @@ try {
         "http://127.0.0.1:$($connection.Port)/companion/open")
     try {
         $request.Headers.Add('x-ccf-token', $connection.Token)
+        if ($Backend) {
+            $request.Content = [Net.Http.StringContent]::new((@{backend=$Backend} | ConvertTo-Json -Compress),
+                [Text.Encoding]::UTF8, 'application/json')
+        }
         $response = $client.SendAsync($request).GetAwaiter().GetResult()
         try {
             if (-not $response.IsSuccessStatusCode) {

@@ -19,7 +19,8 @@ async function fixture(t, { previousRun, initialState, companionSession, stateFi
   const pendingTimers = new Set();
   const timers = {
     setTimeout(callback, delay) {
-      if (delay !== 250) return setTimeout(callback, delay);
+      // The state checkpoint batches at 2000 ms, the log at 250 ms: hold both until stop.
+      if (delay !== 250 && delay !== 2000) return setTimeout(callback, delay);
       const handle = { callback, unref() {} };
       pendingTimers.add(handle);
       return handle;
@@ -46,7 +47,7 @@ async function fixture(t, { previousRun, initialState, companionSession, stateFi
 test("runtime batches hook persistence and flushes state/logs before removing its clean-run marker", async (t) => {
   const { runtime, electron, data, pendingTimers, started } = await fixture(t);
   const status = await electron.ipcMain.invoke("ccf:get-log-metadata");
-  assert.equal(status.persistence.flushDelayMs, 250);
+  assert.equal(status.persistence.flushDelayMs, 2000);
   assert.equal(status.recovery.previousUncleanExit, false);
   assert.equal(fs.existsSync(path.join(data, "run-marker.json")), true);
   const headers = { "content-type": "application/json", "x-ccf-token": started.settings.hookToken };
@@ -57,7 +58,10 @@ test("runtime batches hook persistence and flushes state/logs before removing it
     assert.equal(response.status, 200);
     await response.text();
   }
-  assert.equal(runtime.snapshot().state.events.length, 8, "live state is immediately available");
+  // The hook server answers before it ingests; live state follows within a tick, not a disk write.
+  const deadline = Date.now() + 1000;
+  while (runtime.snapshot().state.events.length < 8 && Date.now() < deadline) await new Promise((resolve) => setTimeout(resolve, 5));
+  assert.equal(runtime.snapshot().state.events.length, 8, "live state is available without a checkpoint");
   assert.equal(fs.existsSync(path.join(data, "state.json")), false, "no disk save for individual hooks");
   assert.equal((await electron.ipcMain.invoke("ccf:get-log-metadata")).persistence.pending, true);
   await runtime.stop();

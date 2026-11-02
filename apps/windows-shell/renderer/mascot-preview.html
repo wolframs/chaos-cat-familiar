@@ -3,67 +3,8 @@
   <head>
     <meta charset="utf-8" />
     <title>Chaos Cat Familiar Preview</title>
+    <link rel="stylesheet" href="./brand-tokens.css" />
     <style>
-      :root {
-        --bg: #120d1e;
-        --panel: rgba(255, 255, 255, 0.08);
-        --panel-strong: rgba(255, 255, 255, 0.12);
-        --text: #f8f4ff;
-        --muted: rgba(248, 244, 255, 0.72);
-        --accent: #ff7b2c;
-        --border: rgba(255, 255, 255, 0.1);
-      }
-
-      body {
-        margin: 0;
-        font-family: "Segoe UI", sans-serif;
-        color: var(--text);
-        background:
-          radial-gradient(circle at top left, rgba(255, 123, 44, 0.2), transparent 24%),
-          radial-gradient(circle at bottom right, rgba(102, 78, 255, 0.18), transparent 28%),
-          linear-gradient(180deg, #191127 0%, var(--bg) 100%);
-      }
-
-      .titlebar {
-        height: 56px;
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        padding: 0 14px 0 18px;
-        background: rgba(17, 12, 28, 0.9);
-        border-bottom: 1px solid rgba(255, 255, 255, 0.08);
-        backdrop-filter: blur(18px);
-        -webkit-app-region: drag;
-      }
-
-      .titlebar-label {
-        display: flex;
-        align-items: center;
-        gap: 10px;
-        font-size: 13px;
-        font-weight: 700;
-      }
-
-      .titlebar-dot {
-        width: 10px;
-        height: 10px;
-        border-radius: 999px;
-        background: var(--accent);
-        box-shadow: 0 0 0 4px rgba(255, 123, 44, 0.16);
-      }
-
-      .window-controls {
-        display: flex;
-        gap: 8px;
-        -webkit-app-region: no-drag;
-      }
-
-      .window-controls button {
-        width: 34px;
-        height: 34px;
-        padding: 0;
-        border-radius: 10px;
-      }
 
       main {
         max-width: 1180px;
@@ -93,8 +34,8 @@
         display: inline-flex;
         padding: 6px 11px;
         border-radius: 999px;
-        background: rgba(255, 123, 44, 0.16);
-        color: #ffc699;
+        background: rgba(206, 153, 246, 0.16);
+        color: var(--ccf-accent);
         font-size: 12px;
         font-weight: 700;
         letter-spacing: 0.04em;
@@ -135,9 +76,10 @@
       .preview-media,
       .preview-fallback {
         position: absolute;
-        inset: 0;
+        /* Leave the bottom strip to the HUD instead of drawing under it. */
+        inset: 12px 0 96px;
         width: 100%;
-        height: 100%;
+        height: calc(100% - 108px);
         object-fit: contain;
       }
 
@@ -210,8 +152,8 @@
       }
 
       .state-button.active {
-        background: linear-gradient(135deg, rgba(255, 123, 44, 0.9), rgba(255, 153, 84, 0.8));
-        color: #201108;
+        background: var(--ccf-accent);
+        color: #1b1025;
       }
 
       .toolbar {
@@ -257,8 +199,8 @@
       }
 
       .library-item.active {
-        background: rgba(255, 123, 44, 0.16);
-        border-color: rgba(255, 123, 44, 0.5);
+        background: rgba(206, 153, 246, 0.16);
+        border-color: rgba(206, 153, 246, 0.5);
       }
 
       .library-item img {
@@ -283,23 +225,22 @@
         color: var(--text);
       }
     </style>
+    <link rel="stylesheet" href="./utility-window.css" />
   </head>
   <body>
-    <div class="titlebar">
-      <div class="titlebar-label">
-        <span class="titlebar-dot"></span>
-        <span>Chaos Cat Familiar Preview</span>
+    <header class="window-titlebar">
+      <span>Chaos Cat Familiar — Mascot Preview</span>
+      <div class="window-controls" role="group" aria-label="Window controls">
+        <button id="windowMinimize" data-window-action="minimize" aria-label="Minimize window" title="Minimize">−</button>
+        <button id="windowMaximize" data-window-action="toggle-maximize" aria-label="Maximize or restore window" title="Maximize or restore">□</button>
+        <button id="windowClose" data-window-action="close" aria-label="Close window" title="Close">×</button>
       </div>
-      <div class="window-controls">
-        <button class="secondary" id="windowMinimize" aria-label="Minimize window">-</button>
-        <button class="secondary" id="windowClose" aria-label="Close window">x</button>
-      </div>
-    </div>
+    </header>
     <main>
       <section class="hero">
         <article class="card stage">
           <div class="eyebrow">Windows Runtime Preview</div>
-          <h1 id="mascotName">Masko</h1>
+          <h1 id="mascotName">Chaos Cat</h1>
           <p id="mascotDescription">Simulates live Claude activity transitions using the same state machine and media runtime as the overlay.</p>
           <div class="stage-shell">
             <video class="preview-media" id="previewVideo" autoplay muted playsinline></video>
@@ -345,6 +286,7 @@
         </article>
       </section>
     </main>
+    <script src="./window-controls.js"></script>
     <script type="module" src="./mascot-preview.js"></script>
     <script type="module" src="./design-reload.js"></script>
   </body>

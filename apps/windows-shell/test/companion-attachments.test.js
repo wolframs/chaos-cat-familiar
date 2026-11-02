@@ -48,3 +48,16 @@ test("image staging validates types and bounds the pending queue", async () => {
   await assert.rejects(images.addDataUrl({ name: "extra.png", dataUrl: png }), /eight|8/i);
   assert.equal(images.list().length, 8);
 });
+
+test("uncertain submission images restore after relaunch and remain pinned", async () => {
+  const original=await store();
+  const image=await original.addDataUrl({name:'Recovery.png',dataUrl:png});
+  let pinned=true;
+  const restored=new CompanionAttachments({directory:original.directory,isPinned:()=>pinned});
+  await restored.restore([image]);
+  assert.equal(restored.list()[0].id,image.id);
+  await assert.rejects(restored.remove(image.id),/uncertain|pending/i);
+  assert.ok((await fs.stat(image.path)).size>0);
+  await assert.rejects(restored.restore([{...image,path:path.join(original.directory,'..','private.png')}]),/owned/i);
+  pinned=false;await restored.remove(image.id);
+});

@@ -5,6 +5,7 @@ import test, { after } from "node:test";
 import assert from "node:assert/strict";
 import http from "node:http";
 import net from "node:net";
+import { EventEmitter } from 'node:events';
 import {
   createWindowsShellRuntime
 } from "../runtime/windows-shell-runtime.js";
@@ -21,6 +22,35 @@ function makeTempDir() {
 function readJson(filePath) {
   return JSON.parse(fs.readFileSync(filePath, "utf8"));
 }
+
+test('companion switch IPC preserves explicit intent and leaves target startup to the user', async t => {
+  const root = makeTempDir();
+  const electron = createFakeElectron({ home: root, appData: root });
+  const companionSession = new EventEmitter();
+  companionSession.getSnapshot = () => ({backend:'claude',connected:false,phase:'offline'});
+  companionSession.stop = async () => {};
+  const oldRepo = path.join(root,'original-companion');
+  const nextRepo = path.join(root,'next-companion');
+  fs.mkdirSync(nextRepo);fs.writeFileSync(path.join(nextRepo,'start-companion.ps1'),'# synthetic launcher, never executed');
+  companionSession.sessions = {claude:{spec:{cwd:oldRepo},getSnapshot:()=>({connected:true})}};
+  const calls = [];
+  companionSession.switchBackend = async payload => { calls.push(payload); if (!payload.userInitiated) throw new Error('Explicit switch required'); };
+  const runtime = createWindowsShellRuntime({ electron,
+    processLike: {env:{CCF_HOME_OVERRIDE:root,CCF_APPDATA_OVERRIDE:root,CCF_PORT_OVERRIDE:'0',CCF_TEST_MODE:'1'},argv:[],execPath:process.execPath,pid:process.pid},
+    services: {companionSession,hookInstaller:{async diagnose(){return {hookExists:true,drift:{healthy:true}};}},mascotLibrary:{list(){return {mascots:[]};},async warmBundledAssets(){}}} });
+  t.after(() => runtime.stop());
+  const started = await runtime.start();
+  assert.equal(started.settings.companionBackend, 'claude');
+  assert.equal(started.settings.codexAuthenticationMode, null);
+  await assert.rejects(electron.ipcMain.invoke('ccf:update-settings',{companionRepoPath:'relative-repo'}),/absolute/i);
+  await electron.ipcMain.invoke('ccf:update-settings',{companionRepoPath:nextRepo});
+  const response = await fetch(`http://127.0.0.1:${started.runtime.hookPort}/companion/status`,{method:'POST',headers:{'content-type':'application/json','x-ccf-token':started.settings.hookToken},body:JSON.stringify({session_id:'still-running',cwd:oldRepo,model:{display_name:'Claude current'}})});
+  assert.equal(response.status,200);
+  assert.equal((await electron.ipcMain.invoke('ccf:get-companion-status'))?.session_id,'still-running');
+  await assert.rejects(electron.ipcMain.invoke('ccf:companion-action',{action:'switch-backend',backend:'codex'}),/Explicit/);
+  assert.deepEqual(await electron.ipcMain.invoke('ccf:companion-action',{action:'switch-backend',backend:'codex',userInitiated:true}),{ok:true});
+  assert.deepEqual(calls,[{backend:'codex',userInitiated:false},{backend:'codex',userInitiated:true}]);
+});
 
 test("default startup keeps the mascot alone and utility windows are released on demand", async (t) => {
   const root = makeTempDir();
@@ -661,6 +691,8 @@ test("companion HUDs anchor to the cat and test mode cannot start Claude", async
         last_assistant_message: "The three tickets are ready." })
     });
     assert.equal(stopResponse.status, 200);
+    // Routine hooks are answered before ingestion; give the queued ingest its tick.
+    for (let i = 0; i < 100 && !replies.length; i++) await new Promise((resolve) => setTimeout(resolve, 10));
     assert.equal(replies[0]?.text, "The three tickets are ready.");
     const blockedOpen = await fetch(`http://127.0.0.1:${started.runtime.hookPort}/companion/open`, {
       method: "POST", headers: { "x-ccf-token": started.settings.hookToken }
@@ -759,6 +791,7 @@ test("cleanup actions remove only CCF-owned files and toast state appears for co
           matcher: "",
           hooks: [
             { type: "command", command: `powershell -File "${path.join(home, ".chaos-cat-familiar", "hooks", "hook-sender.ps1")}"` },
+            { type: "http", url: "http://127.0.0.1:49152/hook", headers: { "X-Ccf-Token": "old" }, timeout: 5 },
             { type: "command", command: "python keep-me.py" }
           ]
         }

@@ -56,6 +56,8 @@ let activitySearch = "";
 let receivedInitialState = false;
 const approvalDrafts = new Map();
 const expandedApprovals = new Set();
+const settingsDrafts = new Map();
+const settingsFeedback = new Map();
 let lastApprovalsSignature = null;
 
 function esc(value) {
@@ -329,13 +331,44 @@ function settingsRow(label, value, detail = "") {
   return `<div class="setting-row"><div class="setting-copy"><strong>${esc(label)}</strong>${detail ? `<span class="muted">${esc(detail)}</span>` : ""}</div><div class="setting-value">${esc(value)}</div></div>`;
 }
 
+// The control sits in its own row; `control` is trusted markup built here.
+function settingsControlRow(label, control, detail = "") {
+  return `<div class="setting-row"><div class="setting-copy"><strong>${esc(label)}</strong>${detail ? `<span class="muted">${esc(detail)}</span>` : ""}</div><div class="setting-value control">${control}</div></div>`;
+}
+
+function rangeControl(id, min, max, step, value) {
+  return `<input class="ccf-input" id="${id}" type="range" min="${min}" max="${max}" step="${step}" value="${value}" /><output for="${id}">${Number(value).toFixed(2)}</output>`;
+}
+
 function renderSettings() {
+  const openDetails = [...viewBody.querySelectorAll('details')].map(node => node.open);
   const editors = diagnostics?.editors?.filter((item) => item.detected) ?? [];
   setSection("settings", `<div class="ccf-chip accent">Onboarding ${state?.ui?.onboarding?.completed ? "completed" : "required"}</div>`);
   viewBody.innerHTML = `
     <div class="settings-grid">
+      <section class="ccf-card settings-group"><h3>Claude companion</h3>
+        <p class="muted">Claude remains the default and uses your existing companion launcher and Claude sign-in. No Codex setup is needed.</p>
+        <label>Companion repository <input class="ccf-input" id="companionRepoPath" value="${esc(settings?.companionRepoPath??'')}" placeholder="Folder containing start-companion.ps1" /></label>
+        <button class="ccf-button" id="saveClaudeCompanionSettings">Save Claude settings</button><p class="muted" id="claudeCompanionSettingsResult" role="status"></p>
+        <p class="muted">Changes apply on the next explicit Start. Choose Claude or Codex in the conversation.</p>
+      </section>
+      <section class="ccf-card settings-group"><details${settings?.companionBackend==='codex'?' open':''}><summary>Codex companion (optional)</summary>
+        <p class="muted">Codex uses your normal environment and configuration. Overrides apply on the next explicit Start; saving keeps the current companion running.</p>
+        <label>Codex model (optional override) <input class="ccf-input" id="codexModel" value="${esc(settings?.codexModel??'')}" placeholder="Use configured Codex model" /></label>
+        <label>Authentication <select class="ccf-select" id="codexAuthenticationMode"><option value="">Use normal Codex configuration</option><option value="existing-codex-home" ${settings?.codexAuthenticationMode==='existing-codex-home'?'selected':''}>Use existing Codex authentication</option><option value="dedicated-codex-home" ${settings?.codexAuthenticationMode==='dedicated-codex-home'?'selected':''}>Separate Codex home</option></select></label>
+        <p class="muted">CCF reads no tokens and never copies credentials. The default uses CODEX_HOME or your normal .codex folder. A separate home needs a deliberate sign-in.</p>
+        ${[['codexAuthenticationHome','Codex home override (optional)'],['codexCompanionRepoPath','Companion source'],['companionDataPath','Companion data']].map(([key,label])=>`<label>${label}<input class="ccf-input" id="${key}" value="${esc(settings?.[key]??'')}" placeholder="Absolute path" /></label>`).join('')}
+        <p class="muted">Source contains tools/companion_bridge.py. Data is a separate existing habitat with memory, config, state and journal folders.</p>
+        <details><summary>Advanced paths and observation hooks</summary>
+        ${[['companionCorePath','Shared core document (optional)'],['companionPythonExecutable','Python executable (optional override)'],['codexExecutable','Codex executable (optional override)'],['codexHookNodeExecutable','Node executable for observation hooks']].map(([key,label])=>`<label>${label}<input class="ccf-input" id="${key}" value="${esc(settings?.[key]??'')}" placeholder="Absolute path" /></label>`).join('')}
+        <p class="muted">Ordinary Codex hooks observe activity only. Installation preserves unrelated handlers. Review and enable the installed commands with Codex /hooks; CCF never trusts them automatically.</p>
+        <div class="controls"><button class="ccf-button" id="installCodexHooks">Install Codex observations</button><button class="ccf-button" id="removeCodexHooks">Remove CCF Codex observations</button></div>
+        </details>
+        <button class="ccf-button" id="saveCompanionSettings">Save Codex settings</button><p class="muted" id="companionSettingsResult" role="status"></p>
+        </details>
+      </section>
       <section class="ccf-card settings-group"><h3>Claude Code Hooks</h3>${settingsRow("Claude hooks", diagnostics?.drift?.healthy ? "Healthy" : "Needs attention", "Install, repair, or remove the Windows hook sender.")}<div class="controls"><button class="ccf-button" id="installHooks">Install Hooks</button><button class="ccf-button" id="repairHooks">Repair Hooks</button><button class="ccf-button" id="removeHooks">Remove CCF Claude Hooks</button></div></section>
-      <section class="ccf-card settings-group"><h3>Overlay & Hotkeys</h3>${settingsRow("Shell mode", settings?.appShellMode ?? "developer", "Developer overlay or mascot shell.")}${settingsRow("Overlay opacity", String(settings?.overlayOpacity ?? 1), "Matches the overlay context panel slider.")}${settingsRow("Permission panel scale", String(settings?.permissionPanelScale ?? 1), "Expanded permission readability on Windows.")}${settingsRow("Snooze", settings?.snoozeUntil ?? "off", "Overlay snooze state from shell-owned UI settings.")}${settingsRow("Session switcher hotkeys", "Ctrl+Tab / Ctrl+Shift+Tab", "Available in developer mode; floating mode leaves these keys with your apps.")}<div class="controls"><select class="ccf-select" id="shellMode"><option value="developer" ${settings?.appShellMode === "developer" ? "selected" : ""}>Developer</option><option value="mascot" ${settings?.appShellMode === "mascot" ? "selected" : ""}>Mascot</option></select><input class="ccf-input" id="overlayOpacity" type="range" min="0.1" max="1" step="0.05" value="${settings?.overlayOpacity ?? 1}" /><input class="ccf-input" id="panelScale" type="range" min="0.8" max="2.5" step="0.1" value="${settings?.permissionPanelScale ?? 1}" /><button class="ccf-button" id="resumeOverlay">Resume Overlay</button></div></section>
+      <section class="ccf-card settings-group"><h3>Overlay & Hotkeys</h3>${settingsControlRow("Shell mode", `<select class="ccf-select" id="shellMode"><option value="mascot" ${settings?.appShellMode === "mascot" ? "selected" : ""}>Floating mascot</option><option value="developer" ${settings?.appShellMode !== "mascot" ? "selected" : ""}>Developer overlay</option></select>`, "Floating mascot or the developer overlay panel.")}${settingsControlRow("Overlay opacity", rangeControl("overlayOpacity", 0.1, 1, 0.05, settings?.overlayOpacity ?? 1), "Same as the overlay context panel slider.")}${settingsControlRow("Permission panel scale", rangeControl("panelScale", 0.8, 2.5, 0.1, settings?.permissionPanelScale ?? 1), "Expanded permission readability on Windows.")}${settingsControlRow("Snooze", settings?.snoozeUntil ? `${esc(settings.snoozeUntil)} <button class="ccf-button" id="resumeOverlay">Resume Overlay</button>` : "off", "Overlay snooze state from shell-owned UI settings.")}${settingsRow("Session switcher hotkeys", "Ctrl+Tab / Ctrl+Shift+Tab", "Available in developer mode; floating mode leaves these keys with your apps.")}</section>
       <section class="ccf-card settings-group"><h3>IDE Integration</h3>${settingsRow("Detected editors", editors.map((item) => item.id).join(", ") || "None detected", "Windows focus and activation targets.")}${settingsRow("Exact-tab activation", "URI-based focus only", "Current Windows implementation status.")}<div class="controls"><button class="ccf-button" id="removeIde">Remove IDE Integration</button></div></section>
       <section class="ccf-card settings-group"><h3>Debug & Performance</h3>
         ${settingsRow("Log file", logMetadata?.filePath ?? "Available after startup", "Current log plus one previous file, up to 2 MiB each.")}
@@ -351,6 +384,31 @@ function renderSettings() {
       <section class="ccf-card settings-group"><h3>Install & Uninstall</h3>${settingsRow("Startup at login", diagnostics?.desktop?.openAtLogin ? "Enabled" : "Disabled", "Windows startup preference exposed through the runtime.")}${settingsRow("Protocol readiness", diagnostics?.desktop?.runtimeMode?.isPackaged ? "Packaged validation required" : "Development registration only", "Release-lane validation remains separate from parity work.")}${settingsRow("Retention policy", "Preserve app data by default", "Destructive cleanup remains explicit and opt-in, matching the Windows docs.")}</section>
     </div>
   `;
+  for (const [id, text] of settingsFeedback) {
+    const result = viewBody.querySelector(`#${id}`);
+    if (result) result.textContent = text;
+  }
+  for (const field of viewBody.querySelectorAll('input:not([type]), input[type="text"], select#codexAuthenticationMode')) {
+    if (settingsDrafts.has(field.id)) {
+      if (settingsDrafts.get(field.id) === String(settings?.[field.id] ?? '')) settingsDrafts.delete(field.id);
+      else field.value = settingsDrafts.get(field.id);
+    }
+    field.addEventListener('input', () => settingsDrafts.set(field.id, field.value));
+    field.addEventListener('change', () => settingsDrafts.set(field.id, field.value));
+  }
+  [...viewBody.querySelectorAll('details')].forEach((node, index) => { if (index < openDetails.length) node.open = openDetails[index]; });
+  viewBody.querySelector('#saveClaudeCompanionSettings')?.addEventListener('click',async()=>{
+    const companionRepoPath=viewBody.querySelector('#companionRepoPath').value.trim();
+    if(!companionRepoPath){showSettingsFeedback('claudeCompanionSettingsResult','Choose the folder containing start-companion.ps1.');return;}
+    try{await window.ccf.updateSettings({companionRepoPath});showSettingsFeedback('claudeCompanionSettingsResult','Saved. Applies on the next explicit Start.');}catch(error){showSettingsFeedback('claudeCompanionSettingsResult',error.message);}
+  });
+  viewBody.querySelector('#saveCompanionSettings')?.addEventListener('click',async()=>{
+    const patch={};for(const key of ['codexModel','codexAuthenticationMode','codexAuthenticationHome','codexCompanionRepoPath','companionDataPath','companionCorePath','companionPythonExecutable','codexExecutable','codexHookNodeExecutable'])patch[key]=viewBody.querySelector(`#${key}`).value.trim()||null;
+    try{await window.ccf.updateSettings(patch);showSettingsFeedback('companionSettingsResult','Saved. Start or reconnect explicitly from the conversation.');}catch(error){showSettingsFeedback('companionSettingsResult',error.message);}
+  });
+  for(const [button,action]of [['installCodexHooks','install-codex-hooks'],['removeCodexHooks','remove-codex-hooks']])viewBody.querySelector(`#${button}`)?.addEventListener('click',async()=>{
+    try{const result=await window.ccf.companionAction({action});showSettingsFeedback('companionSettingsResult',result.message??'Updated. Review trust with Codex /hooks.');}catch(error){showSettingsFeedback('companionSettingsResult',error.message);}
+  });
   for (const key of ["debugLogging", "performanceProfiling"]) {
     viewBody.querySelector(`#${key}`)?.addEventListener("change", async (event) => {
       await window.ccf.updateSettings({ [key]: event.target.checked });
@@ -362,13 +420,20 @@ function renderSettings() {
   viewBody.querySelector("#repairHooks")?.addEventListener("click", async () => { await window.ccf.repairHooks(); await refresh(); });
   viewBody.querySelector("#removeHooks")?.addEventListener("click", async () => { await window.ccf.cleanupAction("remove-hooks"); await refresh(); });
   viewBody.querySelector("#shellMode")?.addEventListener("change", async (event) => { await window.ccf.updateSettings({ appShellMode: event.target.value }); });
-  viewBody.querySelector("#overlayOpacity")?.addEventListener("input", async (event) => { await window.ccf.updateSettings({ overlayOpacity: Number(event.target.value) }); });
-  viewBody.querySelector("#panelScale")?.addEventListener("input", async (event) => { await window.ccf.updateSettings({ permissionPanelScale: Number(event.target.value) }); });
+  const showValue = (event) => { event.target.nextElementSibling.textContent = Number(event.target.value).toFixed(2); };
+  viewBody.querySelector("#overlayOpacity")?.addEventListener("input", async (event) => { showValue(event); await window.ccf.updateSettings({ overlayOpacity: Number(event.target.value) }); });
+  viewBody.querySelector("#panelScale")?.addEventListener("input", async (event) => { showValue(event); await window.ccf.updateSettings({ permissionPanelScale: Number(event.target.value) }); });
   viewBody.querySelector("#resumeOverlay")?.addEventListener("click", async () => { await window.ccf.dispatchCommand("resume-overlay"); await refresh(); });
   viewBody.querySelector("#removeIde")?.addEventListener("click", async () => { await window.ccf.cleanupAction("remove-ide-integration"); });
   viewBody.querySelector("#clearLocalData")?.addEventListener("click", async () => { await window.ccf.cleanupAction("clear-local-data"); await refresh(); });
   viewBody.querySelector("#clearCacheLogs")?.addEventListener("click", async () => { await window.ccf.cleanupAction("clear-cache-logs"); await refresh(); });
   viewBody.querySelector("#resetOnboarding")?.addEventListener("click", async () => { await window.ccf.cleanupAction("reset-onboarding"); await refresh(); });
+}
+
+function showSettingsFeedback(id, text) {
+  settingsFeedback.set(id, text);
+  const result = viewBody.querySelector(`#${id}`);
+  if (result) result.textContent = text;
 }
 
 function renderView() {
@@ -447,9 +512,27 @@ function selectInitialSection() {
   for (const id of expandedApprovals) if (!pendingIds.has(id)) expandedApprovals.delete(id);
 }
 
-window.ccf.onState((value) => { state = value; selectInitialSection(); renderNav(); renderSummary(); renderView(); renderOnboarding(); });
-window.ccf.onSettings((value) => { settings = value; renderSummary(); renderView(); });
-window.ccf.onMascotLibrary((value) => { mascotLibrary = value; renderSummary(); renderView(); });
+// A pushed update must not replace a settings control mid-drag or mid-edit
+// (each slider step itself pushes new settings); render once focus leaves it.
+// Buttons count too: a render between mousedown and mouseup would swallow a Save click.
+let deferredSettingsRender = false;
+function editingSettings() {
+  const active = document.activeElement;
+  return currentSection === "settings" && Boolean(active && viewBody.contains(active) && active.matches("input, select, textarea, button, summary"));
+}
+function renderPushedView() {
+  if (editingSettings()) { deferredSettingsRender = true; return; }
+  renderView();
+}
+viewBody.addEventListener("focusout", () => setTimeout(() => {
+  if (!deferredSettingsRender || editingSettings()) return;
+  deferredSettingsRender = false;
+  renderView();
+}));
+
+window.ccf.onState((value) => { state = value; selectInitialSection(); renderNav(); renderSummary(); renderPushedView(); renderOnboarding(); });
+window.ccf.onSettings((value) => { settings = value; renderSummary(); renderPushedView(); });
+window.ccf.onMascotLibrary((value) => { mascotLibrary = value; renderSummary(); renderPushedView(); });
 window.ccf.onDashboardSection?.((section) => {
   if (!sections.some(([id]) => id === section)) return;
   currentSection = section;
@@ -459,9 +542,6 @@ window.ccf.onDashboardSection?.((section) => {
   renderOnboarding();
 });
 
-for (const [id, action] of [["windowMinimize", "minimize"], ["windowMaximize", "toggle-maximize"], ["windowClose", "close"]]) {
-  document.getElementById(id)?.addEventListener("click", () => window.ccf.windowAction(action));
-}
 
 openDiagnostics.addEventListener("click", async () => { await window.ccf.openDiagnostics(); });
 rerunOnboarding.addEventListener("click", async () => { currentSection = "activity"; await window.ccf.dispatchCommand("reset-onboarding"); await refresh(); });

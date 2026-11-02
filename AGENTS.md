@@ -1,7 +1,8 @@
 # AGENTS.md
 
 Chaos Cat Familiar (CCF): a Windows desktop familiar for Claude Code sessions.
-Claude Code only: Codex and Copilot support was removed on purpose (2026-10-16); don't add it back.
+Claude Code is the default. The companion pane can also run Codex (`codex app-server` with the
+user's own config), and Codex hooks feed session observation (2026-10-28). Copilot stays out.
 Standalone project; it started as a port of Masko Code v0.12.0 but no longer tracks upstream.
 State of play and the next step: `docs/STATUS.md`.
 Hook-to-renderer walkthrough and file map: [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
@@ -34,7 +35,8 @@ npm workspaces monorepo. Core is platform-neutral; the shell is Windows/Electron
 - **`HookServer`**: HTTP on `127.0.0.1`, port `49152` by default (configurable; shell falls back to a free port).
   `GET /health`, `GET /state`, `POST /hook`,
   `POST /approvals/:id/:action`, authenticated `POST /companion/open` and
-  `POST /companion/status` for the work companion HUD.
+  `POST /companion/status` for the work companion HUD, and `POST /companion/bubble`
+  (`{text}` or `{event, placeholders?, text?}`, plus `style?`, `special?`) for the cat's speech bubbles.
 - **`platform-service-contracts.js`**: abstract bases the shell implements.
 - **`models.js`**: `normalizeEvent()` turns snake_case hook payloads into camelCase.
 - **`contracts/`**: hook-event JSON Schema and permission-response examples. Runtime validation is
@@ -51,10 +53,20 @@ npm workspaces monorepo. Core is platform-neutral; the shell is Windows/Electron
 
 ### Hooks
 
-`ElectronHookInstallationService` writes hooks into `~/.claude/settings.json`. They run the generated
-`~/.chaos-cat-familiar/hooks/hook-sender.ps1`, which forwards events to the hook server. Permission
-requests block; everything else is fire-and-forget. Removal only touches entries that reference that
-sender.
+`ElectronHookInstallationService` writes hooks into `~/.claude/settings.json` in two forms:
+
+- `SessionStart`, `UserPromptSubmit`, `PermissionRequest`: a command hook running the generated
+  `~/.chaos-cat-familiar/hooks/hook-sender.ps1`. SessionStart accepts no http hooks, and the sender
+  adds `shell_pid` to exactly these three. Permission requests block (timeout 130); the other two are async.
+- Every other event: a Claude Code http hook (`type: "http"`, `http://127.0.0.1:<port>/hook`,
+  `X-Ccf-Token` header, timeout 5), with no process per event. A 30-minute ETW capture
+  (2026-11-02) counted 712 sender starts, each behind two Git Bash processes, ~2.6 s and ~0.7 CPU-s apiece.
+
+Http hooks are synchronous, so `POST /hook` answers routine events right after validation and
+ingests them afterwards on a serial chain (`HookServer.idle()` waits for it). CCF owns a command
+that references the sender, and an http hook whose url is `http://127.0.0.1:<any port>/hook` with
+an `X-Ccf-Token` header (`claude-hook-cleanup.js`). Removal and drift checks touch only those;
+a changed port or token counts as drift and is rewritten.
 
 Starting the app installs or repairs these hooks in the real `~/.claude/settings.json` (`bootstrapClaudeHooks`
 in the runtime). For any test run, use `npm run smoke:windows-shell` or set `CCF_HOME_OVERRIDE` and

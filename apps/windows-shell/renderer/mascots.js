@@ -12,8 +12,6 @@ const mascotLibraryEl = document.getElementById("mascotLibrary");
 const featuredMascotsEl = document.getElementById("featuredMascots");
 const librarySearch = document.getElementById("librarySearch");
 const libraryFilter = document.getElementById("libraryFilter");
-const windowMinimize = document.getElementById("windowMinimize");
-const windowClose = document.getElementById("windowClose");
 const viewStateKey = "ccf.mascots.viewState";
 
 function logUi(level, message, context = {}) {
@@ -172,15 +170,7 @@ openPreview.addEventListener("click", async () => {
   await window.ccf.openMascotPreview();
 });
 
-windowMinimize?.addEventListener("click", async () => {
-  logUi("info", "Mascot manager minimize clicked");
-  await window.ccf.windowAction("minimize");
-});
 
-windowClose?.addEventListener("click", async () => {
-  logUi("info", "Mascot manager close clicked");
-  await window.ccf.windowAction("close");
-});
 
 window.ccf.onMascotLibrary((library) => {
   renderLibrary(library);

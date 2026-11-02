@@ -12,3 +12,9 @@ test("overlayWindowSizeForMode returns compact mascot size and full developer si
   assert.deepEqual(overlayWindowSizeForMode("mascot"), { width: 168, height: 144 });
   assert.deepEqual(overlayWindowSizeForMode("developer"), { width: 420, height: 320 });
 });
+
+test("developer overlay never inherits the mascot's saved size but keeps its own", () => {
+  assert.deepEqual(overlayWindowSizeForMode("developer", { x: 9, y: 9, width: 170, height: 146 }), { width: 420, height: 320 });
+  assert.deepEqual(overlayWindowSizeForMode("developer", { x: 9, y: 9, width: 600, height: 480 }), { width: 600, height: 480 });
+  assert.deepEqual(overlayWindowSizeForMode("mascot", { x: 9, y: 9, width: 600, height: 480 }), { width: 168, height: 144 });
+});

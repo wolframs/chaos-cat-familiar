@@ -82,6 +82,30 @@ test("tray Quit flushes persistence and removes its clean-run marker", async (t)
   assert.equal(f.stops(), 1);
 });
 
+test("each tray pane controls only its own window and can be reopened after closing", async (t) => {
+  const f = await fixture(t);
+  const action = f.electron.ipcMain.handlers.get("ccf:window-action");
+  for (const [id, title] of [["dashboard", "Dashboard"], ["mascots", "Mascots"], ["diagnostics", "Diagnostics"], ["preview", "Preview"]]) {
+    await f.item(id).click();
+    const pane = f.windows().find((window) => window.getTitle().endsWith(title));
+    const event = { sender: pane.webContents };
+    assert.equal(action(event, "minimize"), true);
+    assert.equal(pane.isMinimized(), true);
+    pane.restore();
+    action(event, "toggle-maximize");
+    assert.equal(pane.isMaximized(), true);
+    action(event, "toggle-maximize");
+    assert.equal(pane.isMaximized(), false);
+    action(event, "close");
+    assert.equal(pane.isDestroyed(), true);
+    assert.equal(f.electron.app.quitCalled, undefined);
+    await f.item(id).click();
+    assert.ok(f.windows().some((window) => window !== pane && window.getTitle().endsWith(title) && window.isVisible()));
+  }
+  assert.equal(f.starts(), 0);
+  assert.equal(f.stops(), 0);
+});
+
 test("settings opens the correct dashboard section and tray failures are reported without killing CCF", async (t) => {
   const f = await fixture(t);
   await f.item("settings").click();

@@ -1,4 +1,4 @@
-import { mkdir, readFile, stat, unlink, writeFile } from "node:fs/promises";
+import { mkdir, readFile, stat, lstat, unlink, writeFile } from "node:fs/promises";
 import { randomUUID } from "node:crypto";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
@@ -16,16 +16,16 @@ function imageType(bytes) {
 
 export function composeImageMessage(text, images = []) {
   if (!images.length) return text;
-  const prompt = typeof text === "string" && text.trim() ? text.trim() : "Please look at the attached images.";
-  return `${prompt}\n\nAttached images (use these image files as visual context):\n${images.map((image, index) =>
-    `${index + 1}. ${image.name}: "${image.path}"`).join("\n")}`;
+  const prompt = typeof text === "string" && text.trim() ? text.trim() : "Look at the attached image.";
+  return `${prompt}\n\n${images.map((image) => `[image: ${image.path}]`).join("\n")}`;
 }
 
 export class CompanionAttachments {
-  constructor({ directory }) {
+  constructor({ directory, isPinned = () => false }) {
     this.directory = path.resolve(directory);
     this.pending = new Map();
     this.adding = 0;
+    this.isPinned = isPinned;
   }
 
   list() { return [...this.pending.values()].map((image) => ({ ...image })); }
@@ -71,9 +71,25 @@ export class CompanionAttachments {
 
   markSent(ids) { for (const id of ids) this.pending.delete(id); }
 
+  async restore(images = []) {
+    if (!Array.isArray(images) || images.length > 8) throw new Error("Invalid recovery image selection.");
+    const recovered=[];
+    for (const image of images) {
+      if (typeof image?.path !== 'string' || path.dirname(path.resolve(image.path)) !== this.directory
+        || !/^[a-f0-9-]{36}$/.test(image.id) || !path.basename(image.path).startsWith(`${image.id}.`)) throw new Error('Recovery images must use app-owned paths.');
+      const details=await lstat(image.path);
+      if (!details.isFile() || details.isSymbolicLink() || details.size>MAX_BYTES) throw new Error('Recovery image is unavailable or unsafe.');
+      const bytes=await readFile(image.path);
+      if(!imageType(bytes)) throw new Error('Recovery image is invalid.');
+      recovered.push({...image,previewUrl:pathToFileURL(image.path).href,size:bytes.length});
+    }
+    for(const image of recovered)this.pending.set(image.id,image);
+  }
+
   async remove(id) {
     const image = this.pending.get(id);
     if (!image) return false;
+    if (this.isPinned(id)) throw new Error("This image belongs to a pending or uncertain submission; resolve it before removing the file.");
     await unlink(image.path).catch((error) => { if (error.code !== "ENOENT") throw error; });
     this.pending.delete(id);
     return true;

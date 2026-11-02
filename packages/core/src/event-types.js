@@ -11,6 +11,8 @@ export const HookEventType = Object.freeze({
   SUBAGENT_STOP: "SubagentStop",
   NOTIFICATION: "Notification",
   PRE_COMPACT: "PreCompact",
+  POST_COMPACT: "PostCompact",
+  INTERRUPT: "Interrupt",
   TASK_COMPLETED: "TaskCompleted",
   TEAMMATE_IDLE: "TeammateIdle",
   CONFIG_CHANGE: "ConfigChange",

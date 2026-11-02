@@ -4,19 +4,51 @@ Read [README](../README.md) for running the app, [STATUS](STATUS.md) for current
 and [AGENTS](../AGENTS.md) for commands and conventions. The core has no Electron dependency;
 the shell injects its platform services.
 
+## Companion backends
+
+`CompanionBackends` selects Claude or Codex, guarding active work during switches.
+Claude retains `companion-session.js` and its PTY view. Codex uses
+`codex-json-rpc.js`, `codex-companion-session.js` and a hidden stdio child process
+from `codex-process-transport.js`, inheriting normal user configuration and environment.
+There is no native supervisor or production resource ceiling.
+
+`companion-structured.js` renders messages, grouped system updates and approval forms.
+The runtime clears matching draft/attachment revisions after backend acceptance.
+`CompanionDeliveryStore` stores conversation identity, outcomes and optional watcher
+receipts in atomic JSON; Electron already provides the single-instance lock.
+`CompanionWatcher` owns the opt-in source; `CompanionHabitat` coordinates the Python
+daily owner and accepted memory. `companion-production.js` supplies source/data paths.
+
+Ordinary Codex hooks use a separate authenticated observation route, backend-qualified
+identities and an `integration_source` marker distinct from native `source` metadata.
+They have no approval authority. Tests use fake transports and temporary data.
+See [contract](CODEX-COMPANION-CONTRACT-v1.md) and [operations](CODEX-COMPANION-OPERATIONS.md).
+
 ## A hook's path to the screen
 
 1. Normal startup calls `bootstrapClaudeHooks()` in
    [`windows-shell-runtime.js`](../apps/windows-shell/runtime/windows-shell-runtime.js).
    [`ElectronHookInstallationService`](../apps/windows-shell/services/platform-services.js) writes
-   Claude settings atomically and generates the PowerShell sender for the active local port/token.
-   Routine hooks use Claude-managed async execution; permission requests stay synchronous
-   (130-second hook timeout, 120-second HTTP timeout). Worktree lifecycle hooks are not installed.
-2. The sender posts to [`HookServer`](../packages/core/src/hook-server.js). The server checks the
+   Claude settings atomically. Two transports, one `{matcher: "", hooks: [...]}` entry per event:
+   - `SessionStart`, `UserPromptSubmit` (async) and `PermissionRequest` (synchronous, 130-second
+     hook timeout, 120-second HTTP timeout) run the generated PowerShell sender, which also adds
+     the session's `shell_pid`. SessionStart accepts only command hooks.
+   - All other events are Claude Code http hooks that POST the event JSON to
+     `http://127.0.0.1:<port>/hook` with the `X-Ccf-Token` header (timeout 5 s). No process starts.
+     Before this split, an ETW capture on 2026-11-02 counted 712 sender starts in 30 minutes, each
+     behind two Git Bash processes and burning ~0.7 CPU-s.
+
+   Worktree lifecycle hooks are not installed. A port or token change is drift, and the next
+   start or repair rewrites both forms.
+2. Hooks arrive at [`HookServer`](../packages/core/src/hook-server.js). The server checks the
    loopback Host, rejects browser Origins, and requires `X-Ccf-Token` except on `/health`.
-   The per-install token lives in CCF settings and the generated sender. It then checks the
-   payload with [`hook-validator.js`](../packages/core/src/hook-validator.js), then
+   The per-install token lives in CCF settings, the generated sender and the http hook entries.
+   It then checks the payload with [`hook-validator.js`](../packages/core/src/hook-validator.js), then
    [`normalizeEvent()`](../packages/core/src/models.js) converts snake_case fields to camelCase.
+   Claude Code waits for an http hook's reply, so every event except `PermissionRequest` gets
+   `200 {"ok":true}` right after validation and is ingested afterwards on a serial promise chain
+   that keeps arrival order. Ingest failures are logged. `stop()` drains that chain before the
+   final checkpoint.
 3. [`CcfCoreController`](../packages/core/src/core-controller.js) records sessions, derives
    notifications and manages approvals through its stores. A permission request keeps its HTTP
    connection open until answered or dismissed. Duplicate requests share an approval but have
@@ -73,6 +105,27 @@ Windows drops the topmost bit whenever the taskbar is not topmost at that moment
 a maximized app cover clicked panels. A 2-second watchdog restores any lost topmost bit and
 logs `Companion window lost always-on-top`. Focusing the cat raises the whole cluster; the
 toggle hotkey and the tray's "Bring Companion to Front" summon a buried cluster.
+
+Speech bubbles: the work companion's watcher posts `POST /companion/bubble` (`{text}`) when a
+session waits on the user, alongside its meow. `services/companion-bubbles.js` keeps the
+stack (oldest dropped past 50) and rolls each bubble's style (six, `renderer/companion-bubble.css`)
+and a 1-in-7 special entrance. One transparent, non-focusable window
+(`renderer/companion-bubble.*`, placed by `services/companion-bubble-layout.js`) sits above
+the cat with the newest bubble's tail on its head, shows the newest three plus a "+N" count,
+and exists only while a bubble does. It is click-through except over a bubble (the renderer
+reports the pointer); a click dismisses that bubble. It hides and moves with the cat and is
+stacked last in the cluster, above the conversation. `style` and `special` in the request
+override the roll.
+
+The watcher normally names an event instead of sending text: `{event: "agent_idle",
+placeholders: {agent, mins}}`. `services/cat-lines.js` picks the line from Wolfram's catalog,
+`assets/cat-lines.json` (his text; its `meta` block is the spec): a tier by weight (70/22/7/1),
+an empty tier falls back to the next lower one, a line whose placeholders were not all sent
+counts as missing, lore replaces any bubble at legendary weight, and inside `meta.night_window`
+(22:00-05:00 local) a night line replaces a common one at `replace_chance`. Legendary and lore
+lines force the special entrance. Text sent along with an event is the fallback for an event the
+catalog lacks; an unknown event without text is a 400 (`unknown_bubble_event`). Free text
+alone still works: the companion writes its own greeting bubble that way.
 
 Development runs use `services/design-reload.js` to watch renderer files with debounced
 filesystem events. CSS links swap after their replacements load; HTML and JavaScript saves

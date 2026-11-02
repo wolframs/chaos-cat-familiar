@@ -2,10 +2,16 @@ import path from "node:path";
 import { HookEventType } from "./event-types.js";
 
 export function normalizeEvent(payload, receivedAt = new Date()) {
+  const backend=payload.backend==='codex'?'codex':'claude';
+  const conversationId=payload.session_id??null;
   return {
-    id: crypto.randomUUID(),
+    id: payload.event_id ?? crypto.randomUUID(),
+    backend,conversationId,
+    observationOnly:payload.observation_only===true,
+    integrationSource:payload.integration_source??null,
+    turnId:payload.turn_id??null,
     hookEventName: payload.hook_event_name,
-    sessionId: payload.session_id ?? null,
+    sessionId: backend==='codex'&&conversationId?JSON.stringify(['codex',conversationId]):conversationId,
     cwd: payload.cwd ?? null,
     permissionMode: payload.permission_mode ?? null,
     transcriptPath: payload.transcript_path ?? null,
@@ -42,8 +48,8 @@ export function projectNameOf(event) {
   return event.cwd ? path.basename(event.cwd) : null;
 }
 
-// Claude Code is the only assistant CCF listens to.
 export const ASSISTANT_LABEL = "Claude";
+export const assistantLabelOf=value=>value?.backend==='codex'?'Codex':ASSISTANT_LABEL;
 
 export function createNotification({
   title,

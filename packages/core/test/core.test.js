@@ -149,6 +149,60 @@ test("authenticated companion open delegates to the shell without ingesting a ho
   } finally { await server.stop(); }
 });
 
+test("authenticated companion bubble hands its text to the shell and rejects bad payloads", async () => {
+  const controller = createController();
+  const received = [];
+  const server = new HookServer({ controller, port: 0, authToken: "core-test-token",
+    onCompanionBubble: (payload) => { received.push(payload); return { shown: true }; } });
+  await server.start();
+  try {
+    const response = await requestJson({ port: server.port, method: "POST", path: "/companion/bubble",
+      body: JSON.stringify({ text: "Meow! api-1 is like \"dude, i can haz input plx?!\"" }) });
+    assert.equal(response.statusCode, 200);
+    assert.deepEqual(response.body, { ok: true, shown: true });
+    assert.deepEqual(received, [{ text: "Meow! api-1 is like \"dude, i can haz input plx?!\"", event: null,
+      placeholders: null, style: null, special: null }]);
+    for (const body of [{}, { text: "" }, { text: "x".repeat(301) }, { text: "ok", style: 7 }, { text: "ok", special: "yes" },
+      { event: "" }, { event: "Agent Idle" }, { event: 7 }, { event: "x".repeat(41) }, { text: "ok", placeholders: { agent: "a" } },
+      { event: "agent_idle", placeholders: [] }, { event: "agent_idle", placeholders: { agent: { nested: 1 } } },
+      { event: "agent_idle", placeholders: { agent: "x".repeat(121) } }, { event: "agent_idle", placeholders: { "Bad Key": "a" } },
+      { event: "agent_idle", placeholders: Object.fromEntries(Array.from({ length: 13 }, (_, i) => [`k${i}`, i])) }]) {
+      const rejected = await requestJson({ port: server.port, method: "POST", path: "/companion/bubble", body: JSON.stringify(body) });
+      assert.equal(rejected.statusCode, 400, JSON.stringify(body));
+    }
+    assert.equal(received.length, 1);
+    assert.equal(controller.snapshot().events.length, 0);
+  } finally { await server.stop(); }
+});
+
+test("a companion bubble can name a catalog event; the shell picks the line or rejects an unknown event", async () => {
+  const controller = createController();
+  const received = [];
+  const server = new HookServer({ controller, port: 0, authToken: "core-test-token",
+    onCompanionBubble: (payload) => {
+      received.push(payload);
+      if (payload.event === "nap_time" && !payload.text) return { shown: false, rejected: "unknown_bubble_event" };
+      return payload.event ? { shown: true, tier: "rare", kind: "event", text: "temp finished and broke nothing." } : { shown: true };
+    } });
+  await server.start();
+  try {
+    const post = (body) => requestJson({ port: server.port, method: "POST", path: "/companion/bubble", body: JSON.stringify(body) });
+    const picked = await post({ event: "task_done", placeholders: { agent: "temp", mins: 16 } });
+    assert.equal(picked.statusCode, 200);
+    assert.deepEqual(picked.body, { ok: true, shown: true, tier: "rare", kind: "event", text: "temp finished and broke nothing." });
+    const fallback = await post({ event: "nap_time", text: "Meow! temp is like \"dude, i can haz input plx?!\"" });
+    assert.equal(fallback.statusCode, 200);
+    const unknown = await post({ event: "nap_time" });
+    assert.equal(unknown.statusCode, 400);
+    assert.deepEqual(unknown.body, { error: "unknown_bubble_event" });
+    assert.deepEqual(received, [
+      { text: null, event: "task_done", placeholders: { agent: "temp", mins: 16 }, style: null, special: null },
+      { text: "Meow! temp is like \"dude, i can haz input plx?!\"", event: "nap_time", placeholders: null, style: null, special: null },
+      { text: null, event: "nap_time", placeholders: null, style: null, special: null }
+    ]);
+  } finally { await server.stop(); }
+});
+
 test("permission requests stay pending until resolved and round-trip an allow response", async () => {
   const controller = createController();
   const server = new HookServer({ authToken: "core-test-token",

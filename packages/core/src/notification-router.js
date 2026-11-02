@@ -1,5 +1,5 @@
 import { HookEventType } from "./event-types.js";
-import { ASSISTANT_LABEL, createNotification, eventTypeOf, projectNameOf } from "./models.js";
+import { assistantLabelOf, createNotification, eventTypeOf, projectNameOf } from "./models.js";
 
 function truncate(text, maxLength) {
   if (!text) {
@@ -10,9 +10,10 @@ function truncate(text, maxLength) {
 }
 
 export function notificationForEvent(event) {
+  if(event.observationOnly===true)return null;
   const type = eventTypeOf(event);
   const projectName = projectNameOf(event) ?? "a project";
-  const assistant = ASSISTANT_LABEL;
+  const assistant = assistantLabelOf(event);
 
   switch (type) {
     case HookEventType.NOTIFICATION:

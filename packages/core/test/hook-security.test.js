@@ -31,24 +31,66 @@ test("hook server rejects browser hosts, missing credentials and unknown approva
   const response = await fetch(`${url}/hook`, { method: "POST", headers: { "content-type": "application/json", "x-ccf-token": "test-secret" },
     body: JSON.stringify({ hook_event_name: "PostToolUse", session_id: "large-result", tool_name: "Read", tool_response: { output: "x".repeat(200_000) } }) });
   assert.equal(response.status, 200);
+  await server.idle();
   assert.ok(JSON.stringify(events[0].toolResponse).length < 20_000);
 });
 
 
-test("transport finishes failed ingestion even when diagnostic logging fails", async (t) => {
+test("failed ingestion is logged, not returned, even when diagnostic logging fails", async (t) => {
+  let attempts = 0;
   const server = new HookServer({ port: 0, controller: {
-    logger: { error() { throw new Error("log locked"); } },
+    logger: { error() { attempts++; throw new Error("log locked"); } },
     async ingestEvent() { throw new Error("state locked"); }
   } });
   assert.equal(server.authToken.length, 64);
   await server.start();
   t.after(() => server.stop());
-  const response = await fetch(`http://127.0.0.1:${server.port}/hook`, {
+  const send = () => fetch(`http://127.0.0.1:${server.port}/hook`, {
     method: "POST", headers: { "content-type": "application/json", "x-ccf-token": server.authToken },
     body: JSON.stringify({ hook_event_name: "Stop", session_id: "failed-write" })
   });
-  assert.equal(response.status, 400);
-  assert.equal((await response.json()).error, "state locked");
+  const response = await send();
+  assert.equal(response.status, 200);
+  assert.deepEqual(await response.json(), { ok: true });
+  await server.idle();
+  assert.equal(attempts, 1, "the failure reached the error log");
+  // One failure must not wedge the chain for later events.
+  assert.equal((await send()).status, 200);
+  await server.idle();
+  assert.equal(attempts, 2);
+});
+
+test("routine hooks get 200 before ingestion, ingest in arrival order, and stop drains the queue", async (t) => {
+  const ingested = [];
+  let release;
+  const gate = new Promise((resolve) => { release = resolve; });
+  let persisted = 0;
+  const server = new HookServer({ port: 0, authToken: "order-secret", controller: {
+    logger: { error() {} },
+    async ingestEvent(event) { await gate; ingested.push(event.sessionId); },
+    persistState() { persisted = ingested.length; }, publishState() {}
+  } });
+  await server.start();
+  const send = (sessionId, extra = {}) => fetch(`http://127.0.0.1:${server.port}/hook`, {
+    method: "POST", headers: { "content-type": "application/json", "x-ccf-token": "order-secret" },
+    body: JSON.stringify({ hook_event_name: "PreToolUse", session_id: sessionId, tool_name: "Bash", ...extra })
+  });
+  for (const id of ["one", "two", "three"]) {
+    const response = await send(id);
+    assert.equal(response.status, 200, "answered while ingestion is still blocked");
+    assert.deepEqual(await response.json(), { ok: true });
+  }
+  const invalid = await fetch(`http://127.0.0.1:${server.port}/hook`, {
+    method: "POST", headers: { "content-type": "application/json", "x-ccf-token": "order-secret" },
+    body: JSON.stringify({ session_id: "no-event-name" })
+  });
+  assert.equal(invalid.status, 400, "validation still answers synchronously");
+  assert.deepEqual(ingested, []);
+  const stopping = server.stop();
+  release();
+  await stopping;
+  assert.deepEqual(ingested, ["one", "two", "three"]);
+  assert.equal(persisted, 3, "stop persists after the queued events are in");
 });
 
 

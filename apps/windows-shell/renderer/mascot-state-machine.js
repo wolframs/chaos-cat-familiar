@@ -78,12 +78,12 @@ export function mascotInputsFromState(state) {
     if (lastEventAt == null) {
       return true;
     }
-    return now - lastEventAt <= staleRunningMs;
+    return session.observationAuthority==='hosted'||now - lastEventAt <= staleRunningMs;
   });
 
   const isWorking = workingSessions.length > 0;
   const isIdle = activeSessions.length === 0 || (!compacting && workingSessions.length === 0);
-  const isAlert = visibleApprovals.length > 0;
+  const isAlert = visibleApprovals.length > 0||(state?.hostedCompanion?.pendingRequestCount??0)>0;
   const sessionCount = activeSessions.length;
 
   return {

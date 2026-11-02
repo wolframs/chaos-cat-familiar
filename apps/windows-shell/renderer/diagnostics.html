@@ -3,56 +3,8 @@
   <head>
     <meta charset="utf-8" />
     <title>Chaos Cat Familiar Diagnostics</title>
+    <link rel="stylesheet" href="./brand-tokens.css" />
     <style>
-      body {
-        margin: 0;
-        font-family: "Segoe UI", sans-serif;
-        background: #12161d;
-        color: #f4f1ea;
-      }
-
-      .titlebar {
-        height: 52px;
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        padding: 0 12px 0 16px;
-        background: rgba(13, 17, 23, 0.92);
-        border-bottom: 1px solid rgba(255, 255, 255, 0.08);
-        -webkit-app-region: drag;
-      }
-
-      .titlebar-label {
-        display: flex;
-        align-items: center;
-        gap: 10px;
-        font-size: 13px;
-        font-weight: 700;
-        letter-spacing: 0.02em;
-      }
-
-      .titlebar-dot {
-        width: 10px;
-        height: 10px;
-        border-radius: 999px;
-        background: #f95d02;
-        box-shadow: 0 0 0 4px rgba(249, 93, 2, 0.16);
-      }
-
-      .window-controls {
-        display: flex;
-        gap: 8px;
-        -webkit-app-region: no-drag;
-      }
-
-      .window-controls button {
-        width: 34px;
-        height: 34px;
-        padding: 0;
-        border-radius: 10px;
-        background: rgba(255, 255, 255, 0.08);
-        color: #f4f1ea;
-      }
 
       header {
         padding: 20px;
@@ -93,7 +45,7 @@
         border-radius: 10px;
         border: 1px solid rgba(255, 255, 255, 0.12);
         background: rgba(0, 0, 0, 0.2);
-        color: #f4f1ea;
+        color: var(--ccf-text);
       }
 
       button {
@@ -104,13 +56,13 @@
       }
 
       .primary {
-        background: #f95d02;
+        background: var(--ccf-accent);
         color: white;
       }
 
       .secondary {
         background: rgba(255, 255, 255, 0.12);
-        color: #f4f1ea;
+        color: var(--ccf-text);
       }
 
       pre {
@@ -153,21 +105,20 @@
       .mascot-meta {
         margin-top: 8px;
         font-size: 13px;
-        color: rgba(244, 241, 234, 0.8);
+        color: var(--ccf-text-soft);
       }
     </style>
+    <link rel="stylesheet" href="./utility-window.css" />
   </head>
   <body>
-    <div class="titlebar">
-      <div class="titlebar-label">
-        <span class="titlebar-dot"></span>
-        <span>Chaos Cat Familiar Diagnostics</span>
+    <header class="window-titlebar">
+      <span>Chaos Cat Familiar — Diagnostics</span>
+      <div class="window-controls" role="group" aria-label="Window controls">
+        <button id="windowMinimize" data-window-action="minimize" aria-label="Minimize window" title="Minimize">−</button>
+        <button id="windowMaximize" data-window-action="toggle-maximize" aria-label="Maximize or restore window" title="Maximize or restore">□</button>
+        <button id="windowClose" data-window-action="close" aria-label="Close window" title="Close">×</button>
       </div>
-      <div class="window-controls">
-        <button id="windowMinimize" aria-label="Minimize window">-</button>
-        <button id="windowClose" aria-label="Close window">x</button>
-      </div>
-    </div>
+    </header>
     <header>
       <h1>Diagnostics</h1>
       <p>Hook status, environment detection, recent runtime state, and repair actions.</p>
@@ -238,13 +189,13 @@
       </section>
       <section class="card">
         <h2>Mascot library</h2>
-        <p style="margin-top:0;color:rgba(244,241,234,0.78);">Pick the mascot shown in the overlay, or install another one from a masko.ai slug.</p>
+        <p style="margin-top:0;color:var(--ccf-text-soft);">Pick the mascot shown in the overlay, or install another one from a masko.ai slug.</p>
         <label for="mascotSlug">Install mascot by slug</label>
         <input id="mascotSlug" type="text" placeholder="masko" />
         <div class="actions" style="margin-top: 12px;">
           <button class="primary" id="installMascot">Install mascot</button>
         </div>
-        <div id="mascotStatus" style="margin-top:12px;color:rgba(244,241,234,0.78);"></div>
+        <div id="mascotStatus" style="margin-top:12px;color:var(--ccf-text-soft);"></div>
         <div class="mascot-grid" id="mascotLibrary" style="margin-top:14px;"></div>
       </section>
       <section class="card">
@@ -272,6 +223,7 @@
         <pre id="state">Loading...</pre>
       </section>
     </main>
+    <script src="./window-controls.js"></script>
     <script type="module" src="./diagnostics.js"></script>
     <script type="module" src="./design-reload.js"></script>
   </body>

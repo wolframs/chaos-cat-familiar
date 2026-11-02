@@ -1,7 +1,7 @@
 <!-- DRAFT: needs author -->
 # Chaos Cat Familiar
 
-**A desktop familiar for Claude Code on Windows.**
+**A desktop familiar for Claude Code and Codex on Windows.**
 
 A small black cat with violet flames sits above your windows and changes state with your Claude Code
 sessions: idle, thinking, working, needs attention. When Claude asks for permission, asks a question
@@ -40,16 +40,17 @@ Or point `CCF_HOME_OVERRIDE` and `CCF_APPDATA_OVERRIDE` at temp folders before
 
 ## How it hears Claude Code
 
-CCF installs hooks in `~/.claude/settings.json` that call
-`~/.chaos-cat-familiar/hooks/hook-sender.ps1`, which posts to a local server on `127.0.0.1`
-(port `49152` by default; CCF picks a free port if that one is taken and writes it into the sender).
+CCF installs hooks in `~/.claude/settings.json` that reach a local server on `127.0.0.1`
+(port `49152` by default; CCF picks a free port if that one is taken). Most events are Claude Code
+http hooks posted straight to it; `SessionStart`, `UserPromptSubmit` and permission requests call
+`~/.chaos-cat-familiar/hooks/hook-sender.ps1`. The active port goes into both.
 Each install gets its own token, and the server rejects requests without it.
 
 - **Starting the app installs the hooks**, or repairs them, without asking.
 - Permission requests wait for your answer in the overlay. Quit CCF and your sessions fall back to
   asking in the terminal.
 - Repair or remove the hooks from the dashboard (Settings, Claude Code Hooks). Removal only touches
-  entries that point at CCF's sender; your other hooks stay.
+  entries that point at CCF's sender or its local hook url; your other hooks stay.
 
 ## Remove it
 
@@ -64,8 +65,8 @@ registration. It does not remove a login item or the optional editor helper.
 
 ## The companion panel
 
-CCF can also host one Claude Code session itself: a frameless conversation panel anchored above
-the cat, with a live coloured terminal, one multiline prompt, pasted or dropped images, and four
+CCF can also host one companion session itself: a frameless conversation panel anchored above
+the cat, with a coloured Claude terminal or a structured Codex conversation, one multiline prompt, pasted or dropped images, and four
 rows of status gauges beside the cat. Ctrl+numpad +/- changes the text size and the terminal
 reflows to fit. The panel needs an optional companion launcher, which is not included: a
 PowerShell script that starts the Claude Code session inside CCF. Its location under your home
@@ -73,6 +74,12 @@ folder is set where `CompanionSession` is created in
 `apps/windows-shell/runtime/windows-shell-runtime.js`.
 Without it, CCF is the cat, the overlay and the dashboard. See
 [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for how the panel is wired.
+
+Claude is the default. The panel can also run Codex: CCF starts `codex app-server` with your
+normal Codex configuration, shows the conversation and routes its approvals. Optional Codex hooks
+let CCF observe your other Codex sessions. Setup:
+[`docs/CODEX-COMPANION-OPERATIONS.md`](docs/CODEX-COMPANION-OPERATIONS.md).
+Neutral delivery notices are hidden unless Electron starts with `--debug-ui` or `CCF_DEBUG_UI=1`.
 
 ## Layout
 
@@ -90,7 +97,7 @@ Without it, CCF is the cat, the overlay and the dashboard. See
 
 CCF started as a Windows port of [Masko Code](https://github.com/RousselPaul/masko-code) v0.12.0
 by Paul Roussel and contributors, under the MIT licence, and has since gone its own way: the macOS
-app is gone, Codex and Copilot support is cut, and the brand is replaced.
+app is gone, Masko's Codex and Copilot integrations are cut, and the brand is replaced.
 
 - Chaos Cat is the bundled default mascot, with local transparent animation clips.
 - The other bundled mascots are Masko's art from that MIT snapshot; their videos stream from

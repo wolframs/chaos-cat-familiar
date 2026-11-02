@@ -26,6 +26,7 @@
     "start:windows-shell": "npm --workspace @chaos-cat-familiar/windows-shell run start",
     "start:windows-shell:developer": "powershell -NoProfile -Command \"$env:CCF_APP_MODE_OVERRIDE='developer'; npm --workspace @chaos-cat-familiar/windows-shell run start\"",
     "start:windows-shell:user": "powershell -NoProfile -Command \"$env:CCF_APP_MODE_OVERRIDE='mascot'; npm --workspace @chaos-cat-familiar/windows-shell run start\"",
-    "smoke:windows-shell": "node ./scripts/windows/windows-shell-smoke.mjs"
+    "smoke:windows-shell": "node ./scripts/windows/windows-shell-smoke.mjs",
+    "smoke:utility-panes": "node ./scripts/windows/utility-panes-smoke.mjs"
   }
 }

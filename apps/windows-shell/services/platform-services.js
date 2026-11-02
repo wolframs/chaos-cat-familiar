@@ -5,7 +5,7 @@ import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { fileURLToPath } from "node:url";
 import { writeJsonAtomic } from "../../../packages/core/src/atomic-json.js";
-import { removeCcfHookRegistrations } from "./claude-hook-cleanup.js";
+import { isCcfOwnedHook, removeCcfHookRegistrations } from "./claude-hook-cleanup.js";
 
 const execFileAsync = promisify(execFile);
 const __filename = fileURLToPath(import.meta.url);
@@ -74,6 +74,7 @@ export class ElectronNotificationService {
     this.onClick = onClick;
     this.getPreferences = getPreferences;
     this.iconPath = options.iconPath ?? DEFAULT_NOTIFICATION_ICON;
+    this.hasPendingBackgroundWork = options.hasPendingBackgroundWork ?? null;
   }
 
   async notify(notification) {
@@ -81,6 +82,13 @@ export class ElectronNotificationService {
       enabled: true,
       minPriority: "high"
     };
+    if (notification.category === "idle_alert" && this.hasPendingBackgroundWork?.(notification.sessionId)) {
+      this.logger?.info("notification", "Idle alert suppressed: session still has background work", {
+        title: notification.title,
+        sessionId: notification.sessionId ?? null
+      });
+      return;
+    }
     if (!preferences.enabled) {
       this.logger?.info("notification", "Notification suppressed by preferences", {
         title: notification.title
@@ -373,7 +381,21 @@ export class ElectronActivationService {
   }
 }
 
-function buildHookRegistration(eventName, hookPath) {
+// Only these events go through the PowerShell sender: SessionStart accepts no http hooks, and the
+// sender adds the session's shell_pid (a Win32_Process walk) to exactly these three. Every other
+// event is a Claude Code http hook: no Git Bash + powershell.exe start per event (an ETW capture on
+// 2026-11-02 counted 712 sender starts in 30 minutes, ~2.6 s and ~0.7 CPU-s each).
+const COMMAND_HOOK_EVENTS = new Set(["SessionStart", "UserPromptSubmit", "PermissionRequest"]);
+
+function buildHookRegistration(eventName, hookPath, settings = {}) {
+  if (!COMMAND_HOOK_EVENTS.has(eventName)) {
+    return {
+      type: "http",
+      url: `http://127.0.0.1:${settings.port}/hook`,
+      headers: { "X-Ccf-Token": String(settings.hookToken ?? "") },
+      timeout: 5
+    };
+  }
   return {
     type: "command",
     command: `powershell -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "${hookPath}"`,
@@ -449,7 +471,7 @@ export class ElectronHookInstallationService {
       next.hooks ??= {};
       for (const eventName of CLAUDE_HOOK_EVENTS) {
         next.hooks[eventName] ??= [];
-        next.hooks[eventName].push({ matcher: "", hooks: [buildHookRegistration(eventName, hookPath)] });
+        next.hooks[eventName].push({ matcher: "", hooks: [buildHookRegistration(eventName, hookPath, settings)] });
       }
       return next;
     });
@@ -490,6 +512,9 @@ export class ElectronHookInstallationService {
     }
     if (before.drift.unexpectedCommands.length > 0) {
       repaired.push("replaced stale or mismatched hook commands");
+    }
+    if (before.drift.registrationMismatch?.length > 0 && !after.drift.registrationMismatch?.length) {
+      repaired.push("rewrote hook registrations with a stale transport, port or token");
     }
     this.logger?.info("hooks", "Claude hooks repaired", {
       repaired,
@@ -550,21 +575,19 @@ export class ElectronHookInstallationService {
       : null;
 
     const hookCommand = buildHookRegistration("PermissionRequest", hookPath).command;
+    const hookUrl = buildHookRegistration("Stop", hookPath, settings).url;
     const registeredEvents = [];
     const commandMatches = [];
     if (claudeSettings?.hooks) {
       for (const [eventName, entries] of Object.entries(claudeSettings.hooks)) {
-        const matchingCommands = Array.isArray(entries)
-          ? entries.flatMap((entry) => entry.hooks ?? []).map((hook) => String(hook.command ?? ""))
-          : [];
-        const hasHook = matchingCommands.some((command) => command.includes(hookPath));
-        if (hasHook) {
+        const hooks = Array.isArray(entries) ? entries.flatMap((entry) => entry.hooks ?? []) : [];
+        if (hooks.some((hook) => isCcfOwnedHook(hook, hookPath))) {
           registeredEvents.push(eventName);
         }
         commandMatches.push({
           eventName,
-          commands: matchingCommands,
-          hooks: Array.isArray(entries) ? entries.flatMap((entry) => entry.hooks ?? []) : []
+          commands: hooks.filter((hook) => hook.command != null).map((hook) => String(hook.command)),
+          hooks
         });
       }
     }
@@ -597,13 +620,16 @@ export class ElectronHookInstallationService {
       hookPath,
       hookExists: fs.existsSync(hookPath),
       hookCommand,
+      hookUrl,
+      commandHookEvents: [...COMMAND_HOOK_EVENTS],
       registeredEvents,
       drift: describeHookDrift({
         commandMatches,
         expectedEvents: CLAUDE_HOOK_EVENTS,
         expectedHookPath: hookPath,
         actualScript: fs.existsSync(hookPath) ? fs.readFileSync(hookPath, "utf8") : null,
-        expectedScript: buildHookSenderScript(settings)
+        expectedScript: buildHookSenderScript(settings),
+        settings
       }),
       environments,
       editors,
@@ -611,7 +637,11 @@ export class ElectronHookInstallationService {
       runningWindows,
       health,
       supportTiers: {
-        supportedNow: ["PowerShell hook transport", "Window activation (exact tab unconfirmed)"],
+        supportedNow: [
+          "Claude Code http hooks (routine events)",
+          "PowerShell hook sender (SessionStart, UserPromptSubmit, PermissionRequest)",
+          "Window activation (exact tab unconfirmed)"
+        ],
         detectedButLimited: ["WSL", "Windows Terminal coarse activation"]
       }
     };
@@ -940,18 +970,23 @@ function buildActivationAttempts(mode, runningWindows, projectDir = null) {
   };
 }
 
-function describeHookDrift({ commandMatches, expectedEvents, expectedHookPath, actualScript, expectedScript }) {
+function describeHookDrift({ commandMatches, expectedEvents, expectedHookPath, actualScript, expectedScript, settings = {} }) {
   const missingEvents = [];
   const unexpectedCommands = [];
+  // Callers that pass full hook objects get both transports recognised; plain command lists
+  // (older callers, tests) keep the command-only check.
+  const ownsHook = (item) => item.hooks
+    ? item.hooks.some((hook) => isCcfOwnedHook(hook, expectedHookPath))
+    : item.commands.some((command) => command.toLowerCase().includes(expectedHookPath.toLowerCase()));
 
   for (const eventName of expectedEvents) {
     const match = commandMatches.find((item) => item.eventName === eventName);
-    if (!match || match.commands.length === 0) {
+    if (!match || (match.hooks ?? match.commands).length === 0) {
       missingEvents.push(eventName);
       continue;
     }
 
-    if (!match.commands.some((command) => command.includes(expectedHookPath))) {
+    if (!ownsHook(match)) {
       unexpectedCommands.push({
         eventName,
         commands: match.commands
@@ -960,11 +995,11 @@ function describeHookDrift({ commandMatches, expectedEvents, expectedHookPath, a
   }
 
   const senderMismatch = expectedScript !== undefined && actualScript !== expectedScript;
-  const obsoleteEvents = commandMatches.filter((item) =>
-    !expectedEvents.includes(item.eventName) && item.commands.some((command) => command.toLowerCase().includes(expectedHookPath.toLowerCase()))
-  ).map((item) => item.eventName);
+  const obsoleteEvents = commandMatches.filter((item) => !expectedEvents.includes(item.eventName) && ownsHook(item))
+    .map((item) => item.eventName);
+  // A changed port or token makes the stored http hook differ from the expected one.
   const registrationMismatch = commandMatches.filter((item) => expectedEvents.includes(item.eventName) && item.hooks &&
-    !item.hooks.some((hook) => JSON.stringify(hook) === JSON.stringify(buildHookRegistration(item.eventName, expectedHookPath)))
+    !item.hooks.some((hook) => JSON.stringify(hook) === JSON.stringify(buildHookRegistration(item.eventName, expectedHookPath, settings)))
   ).map((item) => item.eventName);
   return {
     healthy: missingEvents.length === 0 && unexpectedCommands.length === 0 && !senderMismatch && obsoleteEvents.length === 0 && registrationMismatch.length === 0,

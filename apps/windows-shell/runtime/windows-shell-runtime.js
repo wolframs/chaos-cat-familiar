@@ -8,7 +8,8 @@ import {
   FileJsonStateStore,
   HookServer,
   CcfCoreController,
-  normalizeEvent
+  normalizeEvent,
+  CompanionDeliveryStore
 } from "../../../packages/core/src/index.js";
 import {
   ElectronActivationService,
@@ -18,6 +19,7 @@ import {
 } from "../services/platform-services.js";
 import { deriveOverlayPlacement, clampBoundsToWorkArea } from "../services/display-placement.js";
 import { MascotLibrary } from "../services/mascot-library.js";
+import { hasPendingBackgroundWork } from "../services/claude-session-status.js";
 import { findCcfProtocolArg, parseCcfProtocolUrl } from "../services/ccf-protocol.js";
 import { detectRuntimeMode } from "../services/runtime-mode.js";
 import { PerformanceSampler } from "../services/performance-sampler.js";
@@ -26,7 +28,15 @@ import { RuntimeRunMarker } from "../services/runtime-run-marker.js";
 import { OverlayPlacementPersistence } from "../services/overlay-placement-persistence.js";
 import { normalizeShellMode, overlayWindowSizeForMode } from "../services/overlay-shell-mode.js";
 import { placeCompanionCluster } from "../services/companion-cluster-layout.js";
+import { BUBBLE_SIZE, placeCompanionBubble } from "../services/companion-bubble-layout.js";
+import { CompanionBubbles } from "../services/companion-bubbles.js";
+import { CatLines, loadCatLinesCatalog } from "../services/cat-lines.js";
 import { CompanionSession } from "../services/companion-session.js";
+import { CodexCompanionSession } from "../services/codex-companion-session.js";
+import { CompanionBackends } from "../services/companion-backends.js";
+import { createProductionCompanionServices } from "../services/companion-production.js";
+import { mergeHostedCompanion } from "../services/hosted-companion-state.js";
+import { CodexHookInstaller } from "../services/codex-hook-installer.js";
 import { CompanionAttachments, composeImageMessage } from "../services/companion-attachments.js";
 import { createDesignReload } from "../services/design-reload.js";
 import { fontSizeShortcut } from "../renderer/companion-text-size.js";
@@ -50,6 +60,7 @@ const IPC_HANDLES = [
   "ccf:get-log-metadata",
   "ccf:get-companion",
   "ccf:get-companion-status",
+  "ccf:get-companion-bubbles",
   "ccf:companion-action",
   "ccf:notification-action",
   "ccf:dispatch-command",
@@ -75,7 +86,9 @@ const IPC_HANDLES = [
 ];
 const IPC_EVENTS = [
   "ccf:renderer-log",
-  "ccf:set-overlay-bounds"
+  "ccf:set-overlay-bounds",
+  "ccf:companion-bubble-dismiss",
+  "ccf:companion-bubble-pointer"
 ];
 // The cat and its companion panels share one explicit always-on-top level.
 // Electron's default level ("floating", also what `alwaysOnTop: true` uses)
@@ -127,6 +140,7 @@ function createTestControlServer({
   captureOverlay,
   captureCompanion,
   captureCompanionStatus,
+  captureCompanionBubble,
   captureDashboard,
   closeDashboard,
   awaitState,
@@ -171,6 +185,12 @@ function createTestControlServer({
       const png = await captureOverlay();
       res.writeHead(200, { "content-type": "image/png" });
       res.end(png);
+      return;
+    }
+    if (req.method === "GET" && req.url === "/capture-companion-bubble") {
+      const png = await captureCompanionBubble();
+      res.writeHead(png ? 200 : 404, { "content-type": "image/png" });
+      res.end(png ?? undefined);
       return;
     }
     if (req.method === "GET" && (req.url === "/capture-companion" || req.url === "/capture-companion-status")) {
@@ -314,9 +334,15 @@ export function createWindowsShellRuntime({
   let mascotPreviewWindow = null;
   let companionConversationWindow = null;
   let companionStatusWindow = null;
+  let companionBubbleWindow = null;
+  const companionBubbles = new CompanionBubbles({ random: services.random ?? Math.random });
+  let catLines; // loaded with the first event bubble
   let companionSession = null;
+  let companionDelivery = null;
   let companionAttachments = null;
   let companionStatus = null;
+  let companionStatusBackend = null;
+  let lastHostedStateKey = null;
   let companionPreviewSnapshot = null;
   let companionHudActive = false;
   let syncingCompanionCluster = false;
@@ -365,7 +391,7 @@ export function createWindowsShellRuntime({
     const snapshot = runtimePaths?.testMode && companionPreviewSnapshot
       ? companionPreviewSnapshot
       : changeSnapshot ?? companionSession?.getSnapshot?.() ?? null;
-    return snapshot ? { ...snapshot, attachments: companionAttachments?.list() ?? [] } : null;
+    return snapshot ? { ...snapshot, attachments: companionAttachments?.list() ?? [], debugUi:processLike.env.CCF_DEBUG_UI==='1'||(processLike.argv??[]).includes('--debug-ui') } : null;
   }
 
   function injectCompanionPreview(payload) {
@@ -377,8 +403,11 @@ export function createWindowsShellRuntime({
   }
 
   function isWorkCompanionPath(value) {
-    return typeof value === "string" && path.win32.resolve(value).toLowerCase()
-      === path.win32.resolve(runtimePaths.home, "repos", "work-companion").toLowerCase();
+    const settings=currentSettings();
+    const claude=companionSession?.sessions?.claude;
+    const activeClaudePath=claude?.getSnapshot().connected?claude.spec?.cwd:null;
+    return typeof value==='string'&&[activeClaudePath,settings.companionRepoPath,settings.codexCompanionRepoPath,settings.companionDataPath,path.win32.resolve(runtimePaths.home,'repos','work-companion')]
+      .filter(Boolean).some(candidate=>path.win32.resolve(value).toLowerCase()===path.win32.resolve(candidate).toLowerCase());
   }
 
   function shouldAutoOpenDashboardOnStartup() {
@@ -401,6 +430,7 @@ export function createWindowsShellRuntime({
 
   function syncOverlayHudWindows(settings = overlayDragSettings ?? currentSettings()) {
     if (!overlayWindow) return;
+    syncCompanionBubbleWindow();
     const canShow = overlayWindow.isVisible() && settings.overlayVisible !== false && mascotModeEnabled(settings);
     const bounds = overlayWindow.getBounds();
     const area = screen.getDisplayMatching(bounds).workArea;
@@ -439,7 +469,8 @@ export function createWindowsShellRuntime({
 
   function visibleClusterWindows() {
     // Cat last: each setAlwaysOnTop puts its window at the top of the topmost band.
-    return [companionStatusWindow, companionConversationWindow, overlayWindow]
+    // The speech bubbles overlap the conversation, so they go above everything.
+    return [companionStatusWindow, companionConversationWindow, overlayWindow, companionBubbleWindow]
       .filter((window) => window && !window.isDestroyed?.() && window.isVisible());
   }
 
@@ -526,8 +557,102 @@ export function createWindowsShellRuntime({
     return window;
   }
 
-  function snapshotRuntime() {
-    const state = coreState();
+  // The cat's speech bubbles (POST /companion/bubble from the work companion's
+  // watcher). They stack until each is clicked away; the window exists only
+  // while there is a bubble, and follows the cat's visibility and position.
+  // An event ({event, placeholders}) gets its line from the cat's catalog (services/cat-lines.js);
+  // free text is shown as sent. Text sent with an event is the fallback for an event the catalog lacks.
+  function addCompanionBubble({ text = null, event = null, placeholders = null, style = null, special = null }) {
+    let line = null;
+    if (event) {
+      line = companionCatLines()?.pick(event, placeholders ?? {}) ?? null;
+      if (!line && !text) {
+        logger?.warn("companion-bubble", "Bubble event has no usable line", { event });
+        return { shown: false, rejected: "unknown_bubble_event" };
+      }
+    }
+    const bubble = companionBubbles.add({ text: line?.text ?? text, style,
+      special: special ?? (line?.special ? true : null) });
+    logger?.info("companion-bubble", "Bubble added", { id: bubble.id, style: bubble.style, special: bubble.special,
+      event, tier: line?.tier ?? null, kind: line?.kind ?? null, stack: companionBubbles.size });
+    broadcastCompanionBubbles();
+    syncCompanionBubbleWindow();
+    // The cat's visibility, not the bubble window's: a just-created window can report
+    // isVisible() false right after showInactive() (2026-10-30: a bubble on screen came back shown: false).
+    return { shown: Boolean(companionBubbleWindow && overlayWindow?.isVisible()),
+      ...(line ? { tier: line.tier, kind: line.kind, text: line.text } : {}) };
+  }
+
+  function companionCatLines() {
+    if (catLines !== undefined) return catLines;
+    try {
+      catLines = services.catLines ?? new CatLines({
+        catalog: loadCatLinesCatalog(path.join(SHELL_ROOT, "assets", "cat-lines.json")),
+        random: services.random ?? Math.random, now: services.now ?? Date.now });
+    } catch (error) {
+      // A broken catalog must not cost the bubble: events then fall back to the text sent along.
+      logger?.error("companion-bubble", "Cat line catalog failed to load", { error: String(error?.message ?? error) });
+      catLines = null;
+    }
+    return catLines;
+  }
+
+  function dismissCompanionBubble(id) {
+    if (!companionBubbles.dismiss(id)) return;
+    broadcastCompanionBubbles();
+    syncCompanionBubbleWindow();
+  }
+
+  function broadcastCompanionBubbles() {
+    if (companionBubbleWindow && !companionBubbleWindow.isDestroyed?.()) {
+      companionBubbleWindow.webContents.send("ccf:companion-bubbles", companionBubbles.list());
+    }
+  }
+
+  function syncCompanionBubbleWindow() {
+    if (!companionBubbles.size) {
+      const window = companionBubbleWindow;
+      companionBubbleWindow = null;
+      window?.destroy?.();
+      return;
+    }
+    if (!overlayWindow?.isVisible()) {
+      companionBubbleWindow?.hide();
+      return;
+    }
+    companionBubbleWindow ??= createCompanionBubbleWindow();
+    const catBounds = overlayWindow.getBounds();
+    const next = placeCompanionBubble({ cat: catBounds, workArea: screen.getDisplayMatching(catBounds).workArea });
+    const current = companionBubbleWindow.getBounds();
+    if (["x", "y", "width", "height"].some((key) => current[key] !== next[key])) companionBubbleWindow.setBounds(next);
+    if (!companionBubbleWindow.isVisible()) {
+      companionBubbleWindow.showInactive();
+      keepOnTop(companionBubbleWindow);
+    }
+  }
+
+  function createCompanionBubbleWindow() {
+    const window = new BrowserWindow({
+      ...BUBBLE_SIZE,
+      show: false, frame: false, transparent: true, resizable: false,
+      skipTaskbar: true, focusable: false, hasShadow: false,
+      title: "Chaos Cat Familiar Speech Bubbles",
+      webPreferences: { preload: path.join(SHELL_ROOT, "preload.js") }
+    });
+    keepOnTop(window);
+    // Click-through except over a bubble; the renderer reports the pointer.
+    window.setIgnoreMouseEvents?.(true, { forward: true });
+    window.loadFile(path.join(SHELL_ROOT, "renderer", "companion-bubble.html"));
+    wireWindowLogging(window, "companion-bubble", true);
+    window.on("close", () => {
+      if (companionBubbleWindow === window) companionBubbleWindow = null;
+      window.destroy();
+    });
+    return window;
+  }
+
+  function snapshotRuntime(changeSnapshot) {
+    const state = mergeHostedCompanion(coreState(),changeSnapshot??companionSession?.getSnapshot?.(),currentSettings().companionDataPath??currentSettings().companionRepoPath);
     shellUiState?.sync?.(state);
     const settings = currentSettings();
     return {
@@ -664,12 +789,12 @@ export function createWindowsShellRuntime({
     syncOverlayHudWindows();
   }
 
-  function broadcastState() {
-    const payload = snapshotRuntime().state;
+  function broadcastState(changeSnapshot) {
+    const payload = snapshotRuntime(changeSnapshot).state;
     overlayWindow?.webContents.send("ccf:state", payload);
     dashboardWindow?.webContents.send("ccf:state", payload);
     diagnosticsWindow?.webContents.send("ccf:state", payload);
-    companionConversationWindow?.webContents.send("ccf:companion", companionSnapshot());
+    companionConversationWindow?.webContents.send("ccf:companion", companionSnapshot(changeSnapshot));
     syncOverlayHudWindows();
   }
 
@@ -698,13 +823,18 @@ export function createWindowsShellRuntime({
         port,
         authToken: settingsStore.load().hookToken,
         onCompanionStatus: (payload) => {
+          if(companionSession?.getSnapshot?.().backend==='codex'||payload.backend&&payload.backend!=='claude')return;
           if (!isWorkCompanionPath(payload.cwd ?? payload.workspace?.current_dir)) return;
+          companionStatusBackend='claude';
           companionStatus = payload;
           companionStatusWindow?.webContents.send("ccf:companion-status", payload);
         },
-        onCompanionOpen: async () => {
+        onCompanionBubble: (payload) => addCompanionBubble(payload),
+        onCompanionOpen: async ({ backend } = {}) => {
           if (runtimePaths.testMode) throw new Error("Claude Code start is disabled in test mode.");
-          if (!companionSession.getSnapshot().connected) await companionSession.start({ userInitiated: true });
+          if (backend && backend !== companionSession.getSnapshot().backend) companionSession.selectBackend(backend);
+          if (!companionSession.getSnapshot().connected) await companionSession.start({ userInitiated: true,
+            cwd: currentSettings().companionRepoPath, model: currentSettings().codexModel });
           companionHudActive = true;
           runtimePaths.appModeOverride = "mascot";
           saveSettingsPatch({ appShellMode: "mascot", overlayVisible: true });
@@ -748,7 +878,7 @@ export function createWindowsShellRuntime({
       return;
     }
     const settings = currentSettings();
-    const modeSize = overlayWindowSizeForMode(settings.appShellMode);
+    const modeSize = overlayWindowSizeForMode(settings.appShellMode, settings.overlayBounds);
     const displays = screen.getAllDisplays();
     const testDisplay = runtimePaths.testMode && processLike.env.CCF_TEST_DISPLAY === "rightmost"
       ? displays.reduce((right, display) => display.bounds.x > right.bounds.x ? display : right)
@@ -757,7 +887,7 @@ export function createWindowsShellRuntime({
       displays,
       mode: testDisplay ? "remember" : settings.overlayDisplayMode ?? "remember",
       lastDisplayId: testDisplay?.id ?? settings.overlayDisplayId ?? null,
-      savedBounds: settings.overlayBounds ?? null,
+      savedBounds: settings.overlayBounds ? { ...settings.overlayBounds, ...modeSize } : null,
       cursorPoint: screen.getCursorScreenPoint(),
       primaryDisplayId: screen.getPrimaryDisplay()?.id ?? null,
       width: modeSize.width,
@@ -829,7 +959,7 @@ export function createWindowsShellRuntime({
         frame: false,
         titleBarStyle: "hidden",
         autoHideMenuBar: true,
-        backgroundColor: "#12161d",
+        backgroundColor: "#100d18",
         title: "Chaos Cat Familiar Diagnostics",
         webPreferences: {
           preload: path.join(SHELL_ROOT, "preload.js")
@@ -850,7 +980,7 @@ export function createWindowsShellRuntime({
         frame: false,
         titleBarStyle: "hidden",
         autoHideMenuBar: true,
-        backgroundColor: "#f6f1e8",
+        backgroundColor: "#100d18",
         title: "Chaos Cat Familiar Mascots",
         webPreferences: {
           preload: path.join(SHELL_ROOT, "preload.js")
@@ -871,7 +1001,7 @@ export function createWindowsShellRuntime({
         frame: false,
         titleBarStyle: "hidden",
         autoHideMenuBar: true,
-        backgroundColor: "#120d1e",
+        backgroundColor: "#100d18",
         title: "Chaos Cat Familiar Preview",
         webPreferences: {
           preload: path.join(SHELL_ROOT, "preload.js")
@@ -892,7 +1022,7 @@ export function createWindowsShellRuntime({
         frame: false,
         titleBarStyle: "hidden",
         autoHideMenuBar: true,
-        backgroundColor: "#11141a",
+        backgroundColor: "#100d18",
         title: "Chaos Cat Familiar Dashboard",
         webPreferences: {
           preload: path.join(SHELL_ROOT, "preload.js")
@@ -934,6 +1064,7 @@ export function createWindowsShellRuntime({
         event.preventDefault();
         saveSettingsPatch({ overlayVisible: false });
         overlayWindow.hide();
+        refreshTrayMenu();
       }
     });
     onWithCleanup(overlayWindow, "move", persistOverlayPlacement);
@@ -1344,7 +1475,8 @@ export function createWindowsShellRuntime({
       ipcMain.removeHandler?.(channel);
     }
     for (const channel of IPC_EVENTS) {
-      ipcMain.off?.(channel, ipcMain.__ccfHandlers?.[channel]);
+      const handler = ipcMain.__ccfHandlers?.[channel];
+      if (typeof handler === "function") ipcMain.off?.(channel, handler);
     }
     if (ipcMain.__ccfHandlers) {
       ipcMain.__ccfHandlers = {};
@@ -1362,19 +1494,61 @@ export function createWindowsShellRuntime({
     ipcMain.handle("ccf:get-settings", () => currentSettings());
     ipcMain.handle("ccf:get-companion", () => companionSnapshot());
     ipcMain.handle("ccf:get-companion-status", () => companionStatus);
+    ipcMain.handle("ccf:get-companion-bubbles", () => companionBubbles.list());
     ipcMain.handle("ccf:companion-action", async (_event, payload) => {
       if (!companionSession || !payload || typeof payload !== "object") throw new Error("Companion unavailable.");
       switch (payload.action) {
         case "start":
           if (runtimePaths.testMode) throw new Error("Claude Code start is disabled in test mode.");
-          await companionSession.start({ userInitiated: true });
+          await companionSession.start({ userInitiated: true, cwd: currentSettings().companionRepoPath,
+            model: currentSettings().codexModel });
           return { ok: true };
         case "send": {
           const selected = companionAttachments.select(payload.attachmentIds ?? []);
-          companionSession.send(composeImageMessage(payload.text, selected));
-          companionAttachments.markSent(selected.map((image) => image.id));
+          const submission = companionSession.submit
+            ? await companionSession.submit({ id: payload.submissionId, text: payload.text,
+              attachments: selected, draftRevision: payload.draftRevision })
+            : await (async () => { await companionSession.send(composeImageMessage(payload.text, selected));
+              return { state: "accepted", acceptanceBoundary: "pty-write" }; })();
+          if (submission.state === "accepted") companionAttachments.markSent(selected.map((image) => image.id));
           companionConversationWindow?.webContents.send("ccf:companion", companionSnapshot());
+          return { ok: true, submission };
+        }
+        case "select-backend":
+          if (!companionSession.selectBackend) throw new Error("Backend selection unavailable.");
+          companionSession.selectBackend(payload.backend);
           return { ok: true };
+        case "switch-backend":
+          if (!companionSession.switchBackend) throw new Error("Backend switching unavailable.");
+          await companionSession.switchBackend({ backend: payload.backend, userInitiated: payload.userInitiated === true });
+          return { ok: true };
+        case "resolve-request":
+          return { ok: Boolean(await companionSession.resolveRequest?.({ key: payload.key, response: payload.response })) };
+        case "resolve-unknown":
+          companionSession.resolveUnknown?.(payload);
+          return { ok: true };
+        case "history":
+          return { ok: true, ...await companionSession.history?.(payload) };
+        case 'read-output':
+          return{ok:true,output:await companionSession.getOutput({itemId:payload.itemId})};
+        case "stop":
+          await companionSession.stop();
+          return { ok: true };
+        case "end-day":
+          await companionSession.stop({disposition:'day-end'});
+          return {ok:true};
+        case "recover-launch":
+          await companionSession.recoverFailedStart({userInitiated:true,retainUnknown:payload.retainUnknown===true});
+          return {ok:true};
+        case "open-settings":
+          showDashboard('settings');return {ok:true};
+        case 'install-codex-hooks':
+        case 'remove-codex-hooks': {
+          const settings=currentSettings();
+          if(!settings.codexAuthenticationHome||!settings.codexHookNodeExecutable)throw new Error('Configure the absolute Codex home and Node executable in companion settings first.');
+          const installer=new CodexHookInstaller({codexHome:settings.codexAuthenticationHome,nodeExecutable:settings.codexHookNodeExecutable,senderPath:path.resolve(SHELL_ROOT,'../../scripts/windows/codex-hook-sender.mjs'),settingsPath:runtimePaths.settingsPath});
+          const result=payload.action==='install-codex-hooks'?installer.install({userInitiated:true}):installer.remove({userInitiated:true});
+          return{ok:true,...result,message:'Codex observation hooks updated. Review trust and enablement with Codex /hooks.'};
         }
         case "attach-image":
           await companionAttachments.addDataUrl({ name: payload.name, dataUrl: payload.dataUrl });
@@ -1399,7 +1573,19 @@ export function createWindowsShellRuntime({
           companionConversationWindow?.webContents.send("ccf:companion", companionSnapshot());
           return { ok: true };
         case "raw-input": companionSession.write(payload.text); return { ok: true };
-        case "interrupt": companionSession.interrupt(); return { ok: true };
+        case "interrupt": await companionSession.interrupt(); return { ok: true };
+        case "open-link": {
+          // OSC 8 links from the terminal: web links in the browser, file links in their default app.
+          const url = new URL(String(payload.url));
+          if (url.protocol === "file:") {
+            const file = fileURLToPath(url);
+            if (!fs.existsSync(file)) throw new Error(`File not found: ${file}`);
+            const error = await shell.openPath(file);
+            if (error) throw new Error(error);
+          } else if (url.protocol === "http:" || url.protocol === "https:") await shell.openExternal(url.href);
+          else throw new Error("Only web and file links open from the conversation.");
+          return { ok: true };
+        }
         case "resize":
           if (runtimePaths.testMode && companionPreviewSnapshot && !companionSession.getSnapshot().connected) return { ok: true };
           companionSession.resize(payload.cols, payload.rows);
@@ -1543,6 +1729,11 @@ export function createWindowsShellRuntime({
       return true;
     });
     ipcMain.handle("ccf:update-settings", async (_event, nextSettings) => {
+      if (Object.hasOwn(nextSettings,'companionRepoPath')) {
+        const selected=nextSettings.companionRepoPath;
+        if(typeof selected!=='string'||!path.isAbsolute(selected))throw new Error('Choose an absolute Claude companion repository path.');
+        if(!fs.statSync(selected,{throwIfNoEntry:false})?.isDirectory()||!fs.statSync(path.join(selected,'start-companion.ps1'),{throwIfNoEntry:false})?.isFile())throw new Error('Choose the companion folder containing start-companion.ps1.');
+      }
       const current = settingsStore.load();
       const merged = {
         ...current,
@@ -1649,6 +1840,12 @@ export function createWindowsShellRuntime({
       logger?.[level]?.(category, message, context);
     });
 
+    addIpcListener("ccf:companion-bubble-dismiss", (_event, id) => {
+      if (typeof id === "string") dismissCompanionBubble(id);
+    });
+    addIpcListener("ccf:companion-bubble-pointer", (_event, inside) => {
+      companionBubbleWindow?.setIgnoreMouseEvents?.(!inside, { forward: true });
+    });
     addIpcListener("ccf:set-overlay-bounds", (_event, payload) => {
       if (!overlayWindow || !payload || typeof payload !== "object") {
         return;
@@ -1901,8 +2098,11 @@ export function createWindowsShellRuntime({
         await controlServer.stop().catch(() => {});
         controlServer = null;
       }
-      await companionSession?.stop?.();
+      if (companionSession?.dispose) await companionSession.dispose();
+      else await companionSession?.stop?.();
       companionSession = null;
+      companionDelivery?.close();
+      companionDelivery = null;
       mascotLibrary?.dispose?.();
       mascotWarmupPromise = null;
       await hookOperations;
@@ -1915,6 +2115,7 @@ export function createWindowsShellRuntime({
         overlayWindow,
         companionConversationWindow,
         companionStatusWindow,
+        companionBubbleWindow,
         dashboardWindow,
         diagnosticsWindow,
         mascotWindow,
@@ -1927,6 +2128,7 @@ export function createWindowsShellRuntime({
       overlayWindow = null;
       companionConversationWindow = null;
       companionStatusWindow = null;
+      companionBubbleWindow = null;
       dashboardWindow = null;
       diagnosticsWindow = null;
       mascotWindow = null;
@@ -2032,6 +2234,11 @@ export function createWindowsShellRuntime({
       return startedSnapshot;
     }
 
+    try { return await startFresh(); }
+    catch (error) { await stop("startup-failure"); throw error; }
+  }
+
+  async function startFresh() {
     ensureWindows();
     runtimePaths = resolveRuntimePaths();
     registerCcfProtocolClient();
@@ -2045,6 +2252,17 @@ export function createWindowsShellRuntime({
         openAtLogin: false,
         debugLogging: false,
         performanceProfiling: false,
+        companionBackend: "claude",
+        companionRepoPath: path.join(runtimePaths.home, "repos", "work-companion"),
+        codexModel: null,
+        codexAuthenticationMode: null,
+        codexAuthenticationHome: null,
+        codexCompanionRepoPath: null,
+        companionDataPath: null,
+        companionCorePath: null,
+        companionPythonExecutable: null,
+        codexExecutable: null,
+        companionSensorsEnabled: false,
         appShellMode: runtimePaths.appModeOverride ?? "mascot",
         overlayDisplayMode: "remember",
         overlayDisplayId: null,
@@ -2108,21 +2326,59 @@ export function createWindowsShellRuntime({
       cacheDir: runtimePaths.mascotCacheDir,
       logger
     });
-    companionSession = services.companionSession ?? new CompanionSession({
-      repoPath: path.join(runtimePaths.home, "repos", "work-companion")
-    });
+    if (services.companionSession) {companionSession = services.companionSession;companionDelivery=services.companionDelivery??null;}
+    else {
+      // Codex delivery state must never keep CCF (or Claude) from starting.
+      try { companionDelivery = new CompanionDeliveryStore({ filePath: path.join(runtimePaths.root, "companion-delivery.json") }); }
+      catch (error) { companionDelivery = null; logger.error("companion", "Codex delivery state is unreadable; Codex sends stay off until it is repaired", { error: String(error.message) }); }
+      const production=createProductionCompanionServices({getSettings:currentSettings,home:runtimePaths.home,appData:runtimePaths.root,parentEnv:processLike.env});
+      companionSession = new CompanionBackends({
+        claude: new CompanionSession({ repoPath: initialSettings.companionRepoPath }),
+        codex: services.codexCompanionSession ?? production.codex,
+        habitat:services.companionHabitat??production.habitat,
+        backend: initialSettings.companionBackend === "codex" ? "codex" : "claude", delivery: companionDelivery,
+        onSelect: (backend) => saveSettingsPatch({ companionBackend: backend })
+      });
+      companionSession.watcher=production.createWatcher({delivery:companionDelivery,backend:companionSession});
+      companionSession.watcher?.on('change',()=>companionConversationWindow?.webContents.send('ccf:companion',companionSnapshot()));
+      companionSession.watcher?.on('fault',error=>logger.warn('companion','Watcher needs attention',{error:String(error.message)}));
+      production.habitat.on('fault',error=>logger.warn('companion','Habitat connection needs attention',{error:String(error.message)}));
+    }
     companionAttachments = services.companionAttachments ?? new CompanionAttachments({
-      directory: path.join(runtimePaths.root, "companion-attachments")
+      directory: path.join(runtimePaths.root, "companion-attachments"),
+      isPinned: (id) => companionDelivery?.snapshot().submissions.some(record =>
+        ["pending", "outcomeUnknown"].includes(record.state) && record.attachments?.some(image => image.id === id)) ?? false
     });
+    if (companionDelivery) {
+      const unresolved=companionSession.getSnapshot().submission;
+      if (unresolved?.state === "outcomeUnknown" && unresolved.attachments?.length) {
+        try { await companionAttachments.restore(unresolved.attachments); }
+        catch(error) { logger.error("companion", "Uncertain attachment recovery needs attention; original evidence retained", {error:String(error.message)}); }
+      }
+    }
     onWithCleanup(companionSession, "change", (snapshot) => {
+      if(snapshot.backend&&companionStatusBackend!==snapshot.backend){
+        companionStatusBackend=snapshot.backend;companionStatus=null;
+        companionStatusWindow?.webContents.send('ccf:companion-status',null);
+      }
+      if(snapshot.backend==='codex'){
+        const tokens=snapshot.usage?.tokens,last=tokens?.last,window=tokens?.modelContextWindow;
+        companionStatus={backend:'codex',session_id:snapshot.conversationId,model:{display_name:snapshot.environment?.model??currentSettings().codexModel},
+          context_window:{...(Number.isFinite(window)&&window>0?{context_window_size:window}:{}),...(Number.isFinite(last?.totalTokens)?{total_input_tokens:last.totalTokens,...(window>0?{used_percentage:Math.min(100,last.totalTokens/window*100)}:{})}:{})},cost:null};
+        companionStatusWindow?.webContents.send('ccf:companion-status',companionStatus);
+      }
       companionConversationWindow?.webContents.send("ccf:companion", companionSnapshot(snapshot));
+      if(snapshot.backend==='codex'){
+        const stateKey=JSON.stringify([snapshot.backend,snapshot.conversationId,snapshot.connected,snapshot.phase,snapshot.pendingRequests?.length,snapshot.error]);
+        if(stateKey!==lastHostedStateKey){lastHostedStateKey=stateKey;broadcastState(snapshot);}
+      }
     });
 
     createWindows();
     const designReload = createDesignReload({
       rendererDir: path.join(SHELL_ROOT, "renderer"),
-      enabled: processLike.env.CCF_DESIGN_RELOAD === "1"
-        || (!runtimePaths.testMode && processLike.env.CCF_DESIGN_RELOAD !== "0"),
+      enabled: (processLike.env.CCF_DESIGN_RELOAD === "1"
+        || (!runtimePaths.testMode && processLike.env.CCF_DESIGN_RELOAD !== "0")),
       isPackaged: app.isPackaged,
       getWindows: () => [overlayWindow, companionConversationWindow, companionStatusWindow,
         dashboardWindow, diagnosticsWindow, mascotWindow, mascotPreviewWindow],
@@ -2146,7 +2402,9 @@ export function createWindowsShellRuntime({
 
     stateStore = new FileJsonStateStore(runtimePaths.statePath, {
       events: [], notifications: [], sessions: [], settings: settingsStore.load()
-    }, { flushDelayMs: 250, timers, logger,
+    // state.json is ~1 MB pretty-printed and fsync'd per flush: checkpoint at most every 2 s.
+    // stop() drains the hook server and finishPersistence() flushes; process exit flushes too.
+    }, { flushDelayMs: 2000, timers, logger,
       onError: (error) => logger.error("persistence", "State checkpoint failed; latest state remains in memory", {
         error: String(error?.message ?? error)
       })
@@ -2164,7 +2422,8 @@ export function createWindowsShellRuntime({
         () => showOverlay(),
         () => runtimePaths.testMode
           ? { ...settingsStore.load().notifications, enabled: false }
-          : settingsStore.load().notifications
+          : settingsStore.load().notifications,
+        { hasPendingBackgroundWork: services.hasPendingBackgroundWork ?? hasPendingBackgroundWork }
       ),
       stateStore,
       settings: settingsStore,
@@ -2177,6 +2436,10 @@ export function createWindowsShellRuntime({
     onWithCleanup(controller, "change", (state, event) => {
       const session = state.sessions.find((item) => isWorkCompanionPath(item.projectDir)
         && item.id === event?.sessionId);
+      if(session&&event?.backend!=='codex'&&companionSession?.getSnapshot?.().backend==='claude'){
+        try{companionSession.observeConversation?.({backend:'claude',conversationId:event.conversationId??event.sessionId});}
+        catch(error){logger.warn('companion','Claude identity recovery needs attention',{error:String(error.message)});}
+      }
       if (session && event?.hookEventName === "Stop" && typeof event.lastAssistantMessage === "string") {
         companionSession?.recordAssistantMessage?.(event.lastAssistantMessage, { eventId: event.id });
       }
@@ -2205,6 +2468,8 @@ export function createWindowsShellRuntime({
         captureOverlay: async () => (await overlayWindow.webContents.capturePage()).toPNG(),
         captureCompanion: async () => (await companionConversationWindow.webContents.capturePage()).toPNG(),
         captureCompanionStatus: async () => (await companionStatusWindow.webContents.capturePage()).toPNG(),
+        captureCompanionBubble: async () => companionBubbleWindow
+          ? (await companionBubbleWindow.webContents.capturePage()).toPNG() : null,
         captureDashboard: async () => {
           showDashboard();
           const contents = dashboardWindow.webContents;

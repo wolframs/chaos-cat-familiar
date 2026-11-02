@@ -1,5 +1,5 @@
 import { HookEventType } from "./event-types.js";
-import { ASSISTANT_LABEL, eventTypeOf, projectNameOf } from "./models.js";
+import { assistantLabelOf, eventTypeOf, projectNameOf } from "./models.js";
 
 const MAX_ENDED_SESSIONS = 200;
 
@@ -7,7 +7,7 @@ export class SessionStore {
   constructor(initialSessions = []) {
     this.sessions = initialSessions.map((session) => {
       const { assistantSource, ...restored } = session;
-      return { ...restored, assistantLabel: ASSISTANT_LABEL, terminalPid: null };
+      return { ...restored, backend:restored.backend??'claude',conversationId:restored.conversationId??restored.id, assistantLabel: assistantLabelOf(restored), terminalPid: null };
     });
     this.pruneEnded();
   }
@@ -52,7 +52,9 @@ export class SessionStore {
         id: event.sessionId,
         projectDir: event.cwd ?? null,
         projectName: projectNameOf(event),
-        assistantLabel: ASSISTANT_LABEL,
+        backend:event.backend??'claude',conversationId:event.conversationId??event.sessionId,
+        observationOnly:event.observationOnly===true,
+        assistantLabel: assistantLabelOf(event),
         status: "active",
         phase: type === HookEventType.USER_PROMPT_SUBMIT ? "running" : "idle",
         eventCount: 1,
@@ -61,6 +63,8 @@ export class SessionStore {
         lastToolName: event.toolName ?? null,
         activeSubagentCount: 0,
         isCompacting: type === HookEventType.PRE_COMPACT,
+        phaseBeforeCompaction: type === HookEventType.PRE_COMPACT ? "idle" : null,
+        ...(type === HookEventType.PRE_COMPACT ? { phase: "compacting" } : {}),
         terminalPid: event.terminalPid ?? null,
         shellPid: event.shellPid ?? null,
         transcriptPath: event.transcriptPath ?? null
@@ -84,6 +88,7 @@ export class SessionStore {
         existing.status = "active";
         existing.phase = "idle";
         existing.isCompacting = false;
+        existing.phaseBeforeCompaction = null;
         break;
       case HookEventType.USER_PROMPT_SUBMIT:
       case HookEventType.PRE_TOOL_USE:
@@ -94,21 +99,30 @@ export class SessionStore {
         existing.phase = "running";
         break;
       case HookEventType.PRE_COMPACT:
+        existing.phaseBeforeCompaction = existing.phase === "compacting" ? existing.phaseBeforeCompaction : existing.phase;
         existing.status = "active";
         existing.phase = "compacting";
         existing.isCompacting = true;
         break;
+      case HookEventType.POST_COMPACT:
+        if(existing.phase==="compacting")existing.phase=existing.phaseBeforeCompaction??"running";
+        existing.phaseBeforeCompaction=null;
+        existing.isCompacting=false;
+        break;
+      case HookEventType.INTERRUPT:
       case HookEventType.TASK_COMPLETED:
       case HookEventType.TEAMMATE_IDLE:
       case HookEventType.STOP:
         existing.phase = "idle";
         existing.isCompacting = false;
+        existing.phaseBeforeCompaction = null;
         break;
       case HookEventType.SESSION_END:
         existing.status = "ended";
         existing.phase = "idle";
         existing.isCompacting = false;
         existing.activeSubagentCount = 0;
+        existing.phaseBeforeCompaction = null;
         break;
       case HookEventType.SUBAGENT_START:
         existing.status = "active";

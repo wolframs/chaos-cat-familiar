@@ -114,6 +114,23 @@ function mascotCaptionForState(state, mascotSnapshot) {
   return `${activeSession.assistantLabel ?? "Assistant"} is connected to ${activeSession.projectName ?? activeSession.projectDir ?? "your workspace"}.`;
 }
 
+// Diagnostics for the 2026-10-29 flicker report: logs when the cat leaves a state and comes
+// back to it within 3 s, with what drove each step. Remove once the cause is found.
+const mascotFlips = [];
+function noteMascotFlip(node, kind, inputs, state) {
+  const key = `${node}/${kind}`;
+  if (mascotFlips.at(-1)?.key === key) return;
+  const sessions = (state.sessions ?? []).filter((s) => s.status === "active")
+    .map((s) => `${s.backend ?? "claude"}:${String(s.id).slice(0, 8)}:${s.phase}${s.isCompacting ? ":compacting" : ""}:${s.activeSubagentCount ?? 0}`);
+  mascotFlips.push({ key, at: Date.now(), working: inputs["agent::isWorking"], alert: inputs["agent::isAlert"],
+    compacting: inputs["agent::isCompacting"], approvals: state.approvals?.length ?? 0, hosted: Boolean(state.hostedCompanion), sessions });
+  if (mascotFlips.length > 4) mascotFlips.shift();
+  const back = mascotFlips.at(-3);
+  if (back?.key === key && Date.now() - back.at < 3000) {
+    logUi("warn", "Mascot state flipped and came back", { steps: mascotFlips.map((step) => ({ ...step, at: new Date(step.at).toISOString() })) });
+  }
+}
+
 function renderMascot(state) {
   const currentMascot = ensureMascotRuntime();
   if (!currentMascot || !mascot) {
@@ -130,6 +147,7 @@ function renderMascot(state) {
     ? mascot.settleWithoutPlayback(inputs)
     : mascot.applyInputs(inputs);
   if (!snapshot.media?.url) snapshot = mascot.settleWithoutPlayback(inputs);
+  noteMascotFlip(snapshot.nodeName, attention.kind, inputs, state);
   mascotName.textContent = currentMascot.name;
   mascotState.textContent = attention.label;
   mascotCaption.textContent = `${attention.summary} · ${attention.identity}`;
@@ -526,7 +544,9 @@ function renderContextPanel(state) {
     await window.ccf.dispatchCommand("close-context-menu");
   });
   contextPanel.querySelector("[data-close-overlay]")?.addEventListener("click", async () => {
-    await window.ccf.updateSettings({ overlayVisible: false });
+    // Only the window's close path hides it; writing overlayVisible alone changed nothing.
+    await window.ccf.dispatchCommand("close-context-menu");
+    await window.ccf.windowAction("close");
   });
 }
 
@@ -689,6 +709,8 @@ statsPill.addEventListener("click", async () => {
 });
 overlayRoot.addEventListener("contextmenu", (event) => {
   event.preventDefault();
+  // The developer overlay carries its own controls panel (snooze, mode, opacity).
+  if (!mascotModeEnabled()) window.ccf.showOverlayContextMenu().catch(() => {});
 });
 
 window.addEventListener("keydown", async (event) => {
@@ -765,6 +787,5 @@ document.addEventListener("visibilitychange", () => {
 });
 window.addEventListener("beforeunload", () => {
   clearTimeout(stateExpiryTimer);
-  if (pendingOverlayDragFrame != null) cancelAnimationFrame(pendingOverlayDragFrame);
   mascotVideo.pause();
 });

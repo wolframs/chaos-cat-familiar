@@ -85,8 +85,11 @@ test("companion cluster stays topmost at one explicit level and repairs a lost t
   conversation.alwaysOnTop = false;
   [...timers.intervals.values()][0].callback();
   assert.equal(conversation.isAlwaysOnTop(), true);
-  const log = fs.readFileSync(path.join(root, "chaos-cat-familiar", "logs", "chaos-cat-familiar.log"), "utf8");
-  assert.match(log, /lost always-on-top/);
+  // The core's storage worker appends the warning (step 6): it lands a moment later.
+  const logPath = path.join(root, "chaos-cat-familiar", "logs", "chaos-cat-familiar.log");
+  const readLog = () => { try { return fs.readFileSync(logPath, "utf8"); } catch { return ""; } };
+  for (let i = 0; i < 100 && !/lost always-on-top/.test(readLog()); i++) await new Promise((resolve) => setTimeout(resolve, 20));
+  assert.match(readLog(), /lost always-on-top/);
 
   // Clicking the cat raises the whole cluster, cat last so it ends on top.
   for (const window of [cat, conversation, status]) window.zOrderCalls.length = 0;

@@ -11,6 +11,7 @@ const appData = path.join(root, "appdata");
 const home = path.join(root, "home");
 fs.mkdirSync(home);
 fs.mkdirSync(path.join(appData, "chaos-cat-familiar"), { recursive: true });
+fs.mkdirSync(path.join(appData, "electron-user-data"), { recursive: true });
 fs.writeFileSync(path.join(appData, "chaos-cat-familiar/settings.json"), JSON.stringify({ onboardingCompleted: true }));
 const token = `utility-${Date.now()}`;
 const supervisor = spawnLoggedProcess(path.join(repo, "node_modules/.bin/electron.cmd"), [".", "--remote-debugging-port=0"], {

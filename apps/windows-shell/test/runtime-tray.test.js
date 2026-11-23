@@ -52,7 +52,7 @@ test("tray can reveal a snoozed companion and hide it without starting or stoppi
   assert.equal(companionWindows.length, 3);
   assert.equal(companionWindows.every((window) => window.isVisible()), true);
   assert.equal(f.starts(), 0, "showing the input UI must not launch Claude");
-  await f.item("hide-companion").click();
+  await f.item("minimize-to-tray").click();
   assert.equal(companionWindows.some((window) => window.isVisible()), false);
   assert.equal(f.starts(), 0);
   assert.equal(f.stops(), 0, "hiding the UI cannot terminate a running companion");
@@ -113,12 +113,18 @@ test("settings opens the correct dashboard section and tray failures are reporte
   assert.ok(dashboard.isVisible());
   assert.deepEqual(dashboard.webContents.sent.find((message) => message.channel === "ccf:dashboard-section"),
     { channel: "ccf:dashboard-section", payload: "settings" });
+  // Since step 3 a held settings file is the core's to retry: the choice stays in memory and the action goes through.
   const rename = fs.renameSync;
   t.mock.method(fs, "renameSync", (source, destination) => {
     if (destination === f.settingsPath) throw Object.assign(new Error("settings file locked"), { code: "EPERM" });
     return rename(source, destination);
   });
   await assert.doesNotReject(f.item("developer-mode").click());
+  assert.equal(f.dialogs.length, 0);
+  assert.equal(f.runtime.snapshot().settings.appShellMode, "developer");
+  // An action that does fail is reported, and CCF keeps running.
+  t.mock.method(f.electron.screen, "getAllDisplays", () => { throw new Error("display query failed"); });
+  await assert.doesNotReject(f.item("mascot-mode").click());
   assert.equal(f.electron.app.exitCalls.length, 0);
   assert.equal(f.dialogs.length, 1);
   assert.match(f.dialogs[0][1], /could not|failed/i);

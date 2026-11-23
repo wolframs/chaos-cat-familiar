@@ -1,0 +1,31 @@
+{
+  "name": "disconnects: a waiter that hangs up is detached; the approval stays while another waiter exists and goes with the last",
+  "steps": [
+    { "do": "permission", "as": "lonely", "waitApprovals": 1,
+      "body": { "hook_event_name": "PermissionRequest", "session_id": "s-gone", "tool_name": "Bash", "tool_input": { "command": "sleep 1" } } },
+    { "do": "disconnect", "of": "lonely" },
+    { "do": "waitApprovals", "count": 0 },
+    { "do": "state", "expect": { "approvals": [], "notifications": [ { "category": "permission_request", "outcome": "dismissed" } ] } },
+
+    { "do": "permission", "as": "a", "waitApprovals": 1,
+      "body": { "hook_event_name": "PermissionRequest", "session_id": "s-pair", "tool_name": "Bash", "tool_input": { "command": "build" } } },
+    { "do": "permission", "as": "b",
+      "body": { "hook_event_name": "PermissionRequest", "session_id": "s-pair", "tool_name": "Bash", "tool_input": { "command": "build" } } },
+    { "do": "waitShell", "overlayShows": 3 },
+    { "do": "disconnect", "of": "a" },
+    { "do": "state", "expect": { "approvals": [ { "session": "s-pair", "tool": "Bash" } ] } },
+    { "do": "decide", "via": "http", "approval": 0, "action": "deny", "expect": { "status": 200 } },
+    { "do": "response", "of": "b", "expect": { "status": 200, "body": { "hookSpecificOutput": { "decision": { "behavior": "deny" } } } } },
+    { "do": "state", "expect": { "approvals": [], "notifications": [ { "outcome": "denied" }, { "outcome": "dismissed" } ] } },
+
+    { "do": "permission", "as": "c", "waitApprovals": 1,
+      "body": { "hook_event_name": "PermissionRequest", "session_id": "s-pair", "tool_name": "Write", "tool_input": { "file_path": "C:/fixture/c" } } },
+    { "do": "permission", "as": "d",
+      "body": { "hook_event_name": "PermissionRequest", "session_id": "s-pair", "tool_name": "Write", "tool_input": { "file_path": "C:/fixture/c" } } },
+    { "do": "waitShell", "overlayShows": 5 },
+    { "do": "disconnect", "of": "c" },
+    { "do": "disconnect", "of": "d" },
+    { "do": "waitApprovals", "count": 0 },
+    { "do": "state", "expect": { "approvals": [], "notifications": [ { "outcome": "dismissed" }, { "outcome": "denied" }, { "outcome": "dismissed" } ] } }
+  ]
+}

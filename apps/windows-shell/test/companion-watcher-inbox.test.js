@@ -5,12 +5,12 @@ import os from 'node:os';
 import path from 'node:path';
 import { PassThrough } from 'node:stream';
 import { EventEmitter } from 'node:events';
-import { CompanionDeliveryStore } from '../../../packages/core/src/companion-delivery.js';
+import { CompanionDeliveryStore, MemoryDeliveryRepository } from '../../../packages/core/src/companion-delivery.js';
 import { CompanionWatcherInbox } from '../services/companion-watcher-inbox.js';
 
 test('watcher receipts follow durable inbox commit; replay deduplicates and busy turns queue', async t => {
   const root=fs.mkdtempSync(path.join(os.tmpdir(),'ccf-watcher-'));
-  const delivery=new CompanionDeliveryStore({filePath:path.join(root,'delivery.json')});
+  const delivery=new CompanionDeliveryStore({repository:new MemoryDeliveryRepository()});await delivery.open();
   const readable=new PassThrough(),writable=new PassThrough();
   const receipts=[];writable.on('data',data=>receipts.push(JSON.parse(data)));
   const backend=new EventEmitter();let phase='working';const submitted=[];

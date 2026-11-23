@@ -1,15 +1,22 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { spawnLoggedProcess, waitForJson, ensureGone } from "./process-supervisor.mjs";
 import { runDesignReloadSmoke } from "./design-reload-smoke.mjs";
+import { runSidePanelSmoke, sidePanelFixturePath, writeSidePanelFixture } from "./side-panel-smoke.mjs";
+import { createCompanionFixture, isAlive } from "../../apps/windows-shell/test-support/companion-fixture.js";
+import { storedState } from "../../apps/windows-shell/test-support/stored-state.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const repoRoot = path.resolve(__dirname, "..", "..");
 const appDir = path.join(repoRoot, "apps", "windows-shell");
 const electronCmd = path.join(repoRoot, "node_modules", ".bin", "electron.cmd");
+// CCF_SMOKE_APP=<ChaosCatFamiliar.exe>: the same checks against a packaged build (process-split plan, step 7), still in
+// test mode against temp folders.
+const packagedApp = process.env.CCF_SMOKE_APP ? path.resolve(process.env.CCF_SMOKE_APP) : null;
 
 function delay(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -30,8 +37,8 @@ async function waitForOk(url, headers = {}, timeoutMs = 30000) {
 }
 
 async function main() {
-  if (!fs.existsSync(electronCmd)) {
-    throw new Error(`Electron dependency missing at ${electronCmd}. Run npm install first.`);
+  if (packagedApp ? !fs.existsSync(packagedApp) : !fs.existsSync(electronCmd)) {
+    throw new Error(packagedApp ? `No packaged app at ${packagedApp}.` : `Electron dependency missing at ${electronCmd}. Run npm install first.`);
   }
 
   const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), "ccf-win-smoke-"));
@@ -41,6 +48,12 @@ async function main() {
   const token = `smoke-${Date.now()}`;
   fs.mkdirSync(home, { recursive: true });
   fs.mkdirSync(appData, { recursive: true });
+  // Electron's test profile (main.js does no file work to create it).
+  fs.mkdirSync(path.join(appData, "electron-user-data"), { recursive: true });
+  // The companion's Start runs this PowerShell stand-in in test mode, never Claude (process-split plan, step 4).
+  const companionFixture = createCompanionFixture(tmpRoot);
+  // The side panel's file where CCF looks by default (<home>/repos/work-companion/state/panel.json), generic data.
+  writeSidePanelFixture(sidePanelFixturePath(home));
 
   if (process.env.CCF_SMOKE_DIAGNOSTICS === "1") {
     const settingsDir = path.join(appData, "chaos-cat-familiar");
@@ -49,8 +62,9 @@ async function main() {
   }
   const runtimeMetadataPath = path.join(appData, "chaos-cat-familiar", "runtime.json");
   const designReload = process.env.CCF_SMOKE_DESIGN_RELOAD === "1";
-  const supervisor = spawnLoggedProcess(electronCmd, designReload ? [".", "--remote-debugging-port=0"] : ["."], {
-    cwd: appDir,
+  const launchArgs = designReload ? ["--remote-debugging-port=0"] : [];
+  const supervisor = spawnLoggedProcess(packagedApp ?? electronCmd, packagedApp ? launchArgs : [".", ...launchArgs], {
+    cwd: packagedApp ? path.dirname(packagedApp) : appDir,
     env: {
       ...process.env,
       CCF_HOME_OVERRIDE: home,
@@ -59,6 +73,8 @@ async function main() {
       CCF_TEST_MODE: "1",
       ...(designReload ? { CCF_DESIGN_RELOAD: "1" } : {}),
       CCF_TEST_DISPLAY: "rightmost",
+      // The design-reload run keeps test mode's guard in view instead: without a fixture, Start is refused.
+      ...(designReload ? {} : { CCF_TEST_COMPANION_FIXTURE: companionFixture.dir }),
       CCF_TEST_TOKEN: token
     },
     logFile
@@ -103,6 +119,30 @@ async function main() {
       const log = fs.readFileSync(idle.logging.filePath, "utf8");
       if (!log.includes("[performance]") || !log.includes("Request completed")) throw new Error("Diagnostic log entries missing");
       console.log("Diagnostic logging and periodic performance sampling verified");
+    }
+    // The core runs in its own Electron utility process (process-split plan, step 3).
+    const coreProcess = idle.processes.find((item) => item.type === "Utility" && item.name === "Chaos Cat Familiar Core");
+    if (idle.core?.mode !== "utility" || !coreProcess || coreProcess.pid !== idle.core.pid || idle.core.pid === metadata.pid
+      || idle.core.status !== "ready" || idle.core.hookPort !== metadata.hookPort) {
+      throw new Error(`The core is not running as a ready utility process: ${JSON.stringify(idle.core)}`);
+    }
+    console.log(packagedApp ? `Packaged build: ${packagedApp}` : "Dev run: electron apps/windows-shell");
+    console.log(`Core utility process ${idle.core.pid} serves hooks on port ${idle.core.hookPort}`);
+    if (packagedApp) {
+      // Codex runs the hook sender with plain node from app.asar.unpacked (node cannot read app.asar); everything it
+      // imports must be unpacked with it (final review of the process split: the adapter was not).
+      const sender = path.join(path.dirname(packagedApp), "resources", "app.asar.unpacked", "scripts", "windows", "codex-hook-sender.mjs");
+      const senderSettings = path.join(tmpRoot, "codex-sender-settings.json");
+      fs.writeFileSync(senderSettings, JSON.stringify({ port: metadata.hookPort, hookToken }));
+      const sent = spawnSync(process.execPath, [sender, "--settings", senderSettings], { encoding: "utf8", timeout: 20000,
+        input: JSON.stringify({ hook_event_name: "SessionStart", session_id: "packaged-codex-sender", cwd: repoRoot, source: "startup" }) });
+      if (sent.status !== 0 || sent.stderr || sent.stdout.trim() !== "{}") {
+        throw new Error(`The packaged Codex hook sender failed (exit ${sent.status}): ${sent.stderr || sent.stdout || sent.error}`);
+      }
+      const observed = await fetch(`http://127.0.0.1:${metadata.controlPort}/await-state`, { method: "POST", headers: controlHeaders,
+        body: JSON.stringify({ type: "session", match: { backend: "codex" }, timeoutMs: 10000 }) });
+      if (!observed.ok) throw new Error(`The packaged Codex hook sender's observation did not reach the core: ${observed.status}`);
+      console.log("Packaged Codex hook sender: plain node ran it from app.asar.unpacked; its observation reached the core");
     }
     const intervalSeconds = (performance.now() - sampleStart) / 1000;
     const cpuSeconds = idle.processes.reduce((sum, item) => {
@@ -192,6 +232,153 @@ async function main() {
       if (designReload) await runDesignReloadSmoke({ repoRoot, appData, runtimeMetadataPath, metadata, controlHeaders });
     }
 
+    const waitForValue = async (read, what, timeoutMs = 30000) => {
+      const deadline = Date.now() + timeoutMs;
+      while (Date.now() < deadline) {
+        const value = await read();
+        if (value) return value;
+        await delay(100);
+      }
+      throw new Error(`Timed out waiting for ${what}`);
+    };
+    const injectHook = async (payload) => {
+      const response = await fetch(`http://127.0.0.1:${metadata.controlPort}/inject-event`, {
+        method: "POST", headers: controlHeaders, body: JSON.stringify({ kind: "hook", payload }) });
+      if (!response.ok) throw new Error(`Hook injection failed: ${response.status}`);
+    };
+
+    // Process-split plan, step 5: the dashboard page subscribes itself and takes the core's state from its own port
+    // (real preload, real MessagePortMain into the utility process, real page). Main sends it no ccf:state.
+    const dashboardSubscription = (summary) => summary.core?.subscriptions?.find((item) =>
+      String(item.id).startsWith("core-") && item.topics?.includes("events"));
+    const shown = await fetch(`http://127.0.0.1:${metadata.controlPort}/capture-dashboard`, { headers: controlHeaders });
+    if (!shown.ok) throw new Error("Dashboard could not be shown");
+    await shown.arrayBuffer();
+    const firstPort = await waitForValue(async () => dashboardSubscription(await readDiagnostics()),
+      "the dashboard's own state subscription in the core");
+    await injectHook({ hook_event_name: "SessionStart", session_id: "smoke-port", cwd: repoRoot, source: "startup" });
+    const followed = await waitForValue(async () => {
+      const current = dashboardSubscription(await readDiagnostics());
+      return current && current.deltas > firstPort.deltas && current.inflight === 0 && current;
+    }, "a delta on the dashboard's port, acknowledged by the page");
+    console.log(`Dashboard state on its own port: ${followed.frames} frames (${followed.projections} projection), acknowledged`);
+    // A core crash under real Electron, while the dashboard's first hook diagnosis runs PowerShell children in the core
+    // (once, 2026-11-05, such a kill went unnoticed by main for over 20 s; the hosts now also watch the core's pid, so a
+    // missing exit event costs at most a second): main restarts the utility process on the same port, same token.
+    if (process.env.CCF_SMOKE_SKIP_CORE_CRASH !== "1") {
+      const before = await waitForValue(async () => {
+        const diagnostics = await readDiagnostics();
+        return diagnostics.pendingHookOperations > 0 && diagnostics;
+      }, "the dashboard's hook diagnosis running", 10000).catch(() => readDiagnostics());
+      if (!before.pendingHookOperations) console.log("The dashboard's hook diagnosis had finished before the crash");
+      process.kill(before.core.pid);
+      const killedAt = Date.now();
+      const crashDeadline = Date.now() + 20000;
+      let after = before;
+      while (Date.now() < crashDeadline && (after.core?.pid === before.core.pid || after.core?.status !== "ready")) {
+        await delay(100);
+        after = await readDiagnostics();
+        if (process.env.CCF_SMOKE_DEBUG === "1") console.log("after", JSON.stringify(after.core), JSON.stringify(after.processes.map((p) => [p.pid, p.type, p.name])));
+      }
+      if (after.core?.pid === before.core.pid || after.core?.status !== "ready" || after.core.hookPort !== before.core.hookPort) {
+        throw new Error(`The core did not come back on its port after a crash: ${JSON.stringify(after.core)}`);
+      }
+      const probe = await fetch(`http://127.0.0.1:${metadata.hookPort}/ready`, { headers: { "x-ccf-token": hookToken } });
+      if (!probe.ok) throw new Error(`The restarted core does not accept the hook token: ${probe.status}`);
+      console.log(`Core restarted after a crash${before.pendingHookOperations ? " during the hook diagnosis" : ""}: pid `
+        + `${before.core.pid} -> ${after.core.pid}, port ${after.core.hookPort}, ready again after ${Date.now() - killedAt} ms`);
+      // The dashboard got a new port from the new core (a newer epoch, a fresh projection).
+      const reopened = await waitForValue(async () => dashboardSubscription(await readDiagnostics()),
+        "the dashboard's subscription in the restarted core");
+      console.log(`Dashboard re-subscribed to the restarted core: ${reopened.projections} projection, ${reopened.frames} frames`);
+    }
+
+    // The companion in its own utility process (process-split plan, step 4): started only when asked, node-pty and the
+    // PowerShell fixture inside it, its child tree bound to it, a crash that leaves the core alone and needs Start.
+    let companionTree = [];
+    // Not in the design-reload run: it starts CCF without the fixture (above), so Start is refused there.
+    if (process.env.CCF_SMOKE_SKIP_COMPANION !== "1" && !designReload) {
+      const companionAction = async (payload) => {
+        const response = await fetch(`http://127.0.0.1:${metadata.controlPort}/companion-action`, {
+          method: "POST", headers: controlHeaders, body: JSON.stringify(payload) });
+        const body = await response.json();
+        if (!response.ok) throw new Error(`Companion action ${payload.action} failed: ${JSON.stringify(body)}`);
+        return body;
+      };
+      const waitFor = async (read, what, timeoutMs = 30000) => {
+        const deadline = Date.now() + timeoutMs;
+        while (Date.now() < deadline) {
+          const value = await read();
+          if (value) return value;
+          await delay(100);
+        }
+        throw new Error(`Timed out waiting for ${what}`);
+      };
+      const lazy = await readDiagnostics();
+      if (lazy.companion?.mode !== "utility" || lazy.companion.pid !== null) {
+        throw new Error(`The companion process started before it was needed: ${JSON.stringify(lazy.companion)}`);
+      }
+      // The cat's cluster with its conversation window (a test-mode preview of nothing: the live companion shows).
+      const cluster = await fetch(`http://127.0.0.1:${metadata.controlPort}/companion-preview`, {
+        method: "POST", headers: controlHeaders, body: "null" });
+      if (!cluster.ok) throw new Error("The companion cluster could not be shown");
+      await companionAction({ action: "start" });
+      const started = await waitFor(async () => {
+        const diagnostics = await readDiagnostics();
+        return diagnostics.companion?.status === "ready" && diagnostics.companion.job && diagnostics.companion.children.length
+          && diagnostics;
+      }, "the companion process with its PTY child");
+      const companionProcess = started.processes.find((item) => item.type === "Utility" && item.name === "Chaos Cat Familiar Companion");
+      if (!companionProcess || companionProcess.pid !== started.companion.pid || !started.companion.job.joined
+        || started.companion.pid === started.core.pid) {
+        throw new Error(`The companion is not a utility process with a joined job: ${JSON.stringify(started.companion)}`);
+      }
+      const firstTree = await waitFor(() => companionFixture.ptyPids().length === 2 && companionFixture.ptyPids(),
+        "the PowerShell fixture and its hidden grandchild in the companion's PTY");
+      await companionAction({ action: "raw-input", text: "smoke\r" });
+      // Process-split plan, step 5: the terminal's frames reach the conversation page on its own port.
+      const framed = await waitFor(async () => {
+        const stats = (await readDiagnostics()).companionFrames;
+        const port = stats?.subscriptions?.[0];
+        return port && port.frames > 1 && stats;
+      }, "terminal frames on the conversation window's own port (main gets slim snapshots)");
+      console.log(`Conversation frames on their own port: ${framed.subscriptions[0].frames} sent, `
+        + `${framed.subscriptions[0].coalesced} coalesced; main gets slim snapshots`);
+      console.log(`Companion utility process ${started.companion.pid} runs node-pty with the PowerShell fixture ${firstTree.join(", ")} `
+        + `(job joined in ${started.companion.job.ms} ms)`);
+
+      const corePid = started.core.pid;
+      process.kill(started.companion.pid);
+      await waitFor(async () => (await readDiagnostics()).companion?.status === "crashed", "the companion crash noticed", 15000);
+      await waitFor(() => firstTree.every((pid) => !isAlive(pid)), "the fixture's tree gone with the companion", 15000);
+      await delay(1500);
+      const afterCrash = await readDiagnostics();
+      if (afterCrash.companion.status !== "crashed" || afterCrash.companion.pid !== null) {
+        throw new Error(`The companion came back without Start: ${JSON.stringify(afterCrash.companion)}`);
+      }
+      if (afterCrash.core.pid !== corePid || afterCrash.core.status !== "ready") {
+        throw new Error(`A companion crash touched the core: ${JSON.stringify(afterCrash.core)}`);
+      }
+      await companionAction({ action: "start" });
+      const restarted = await waitFor(async () => {
+        const diagnostics = await readDiagnostics();
+        return diagnostics.companion?.status === "ready" && diagnostics.companion.pid !== started.companion.pid && diagnostics;
+      }, "the companion restarted on Start");
+      companionTree = await waitFor(() => {
+        const pids = companionFixture.ptyPids().filter((pid) => !firstTree.includes(pid));
+        return pids.length === 2 && pids;
+      }, "the fixture after the restart");
+      console.log(`Companion killed (fixture tree gone, core untouched) and restarted on Start: pid ${started.companion.pid} -> `
+        + `${restarted.companion.pid}`);
+      await waitFor(async () => (await readDiagnostics()).companionFrames?.subscriptions?.[0]?.frames > 0,
+        "the conversation's frames port to the restarted companion");
+    }
+
+    if (process.env.CCF_SMOKE_SKIP_SIDE_PANEL !== "1") {
+      await runSidePanelSmoke({ controlPort: metadata.controlPort, controlHeaders, home, delay,
+        captureDir: process.env.CCF_SMOKE_COMPANION_CAPTURE_DIR || null });
+    }
+
     const hookInjectResponse = await fetch(`http://127.0.0.1:${metadata.controlPort}/inject-event`, {
       method: "POST",
       headers: controlHeaders,
@@ -272,6 +459,24 @@ async function main() {
     if (diagnostics.activeSessionCount < 1 || diagnostics.pendingApprovalCount < 1) {
       throw new Error("Expected a Claude session and a pending approval in diagnostics summary");
     }
+    // Requests a utility process makes of main (the core's effects; the companion's delivery records) need main's
+    // "ready", which Electron used to refuse right after fork (found 2026-11-05, step 6): they must arrive.
+    if (!(diagnostics.effects?.delivered > 0)) {
+      throw new Error(`The core's effects never reached main: ${JSON.stringify(diagnostics.effects)}`);
+    }
+    console.log(`Core effects acknowledged by main: ${diagnostics.effects.delivered}`);
+    // Main's synchronous native work under real Electron (final review of the process split, item 5): a burst of hook
+    // events, each a state broadcast with the HUD layout pass, while the liveness checks tick.
+    const burst = Number(process.env.CCF_SMOKE_LATENCY_EVENTS ?? 200);
+    for (let index = 0; index < burst; index++) {
+      await injectHook({ hook_event_name: "PreToolUse", session_id: "windows-smoke-claude", tool_name: "Read", cwd: repoRoot,
+        tool_input: { file_path: path.join(repoRoot, `latency-${index}.md`) } });
+    }
+    await delay(1500);
+    const latency = (await readDiagnostics());
+    console.log(`Main latency after ${burst} hook events: ${JSON.stringify({ ...latency.mainLatency,
+      eventLoop: latency.eventLoop ? { p99Ms: latency.eventLoop.p99Ms ?? latency.eventLoop.current?.p99Ms ?? null,
+        maxMs: latency.eventLoop.maxMs ?? latency.eventLoop.current?.maxMs ?? null } : null })}`);
 
     const snapshotResponse = await waitForOk(`http://127.0.0.1:${metadata.controlPort}/snapshot`, {
       "x-ccf-test-token": token
@@ -279,7 +484,11 @@ async function main() {
     const snapshot = await snapshotResponse.json();
     const rendererErrors = (snapshot.state.logs ?? []).filter((item) => item.level === "error"
       && !(designReload && item.category === "ipc" && item.message === "IPC invoke failed: ccf:companion-action"
-        && item.context?.error?.includes("Claude Code start is disabled in test mode.")));
+        && item.context?.error?.includes("Claude Code start is disabled in test mode."))
+      // The crashes this smoke induced on purpose, and a request the open dashboard had in flight at that moment.
+      && !(item.category === "core" && item.message === "Core process exited unexpectedly")
+      && !(item.category === "ipc" && /service is closed \(core exited/.test(item.context?.error ?? ""))
+      && !(item.category === "companion" && item.message.startsWith("Companion process exited unexpectedly")));
     if (rendererErrors.length) throw new Error(`Renderer/runtime errors: ${JSON.stringify(rendererErrors)}`);
     if (!snapshot.state?.notifications?.some((item) => item.body?.includes("Claude wants to use Edit"))) {
       throw new Error("Expected a Claude approval notification in the runtime snapshot");
@@ -326,19 +535,31 @@ async function main() {
     if ((await pendingResponse).status !== 204) throw new Error("Shutdown did not defer pending permission");
     await supervisor.waitForExit(30000);
     await ensureGone(runtimeMetadataPath);
-    const statePath = path.join(appData, "chaos-cat-familiar", "state.json");
-    const checkpoint = JSON.parse(fs.readFileSync(statePath, "utf8"));
-    if (!checkpoint.sessions?.some((session) => session.id === "shutdown-client")) {
-      throw new Error("Shutdown did not flush the latest state checkpoint");
+    // Process-split plan, step 6: the state is in ccf.sqlite, committed by the core's storage worker.
+    const stored = await storedState(path.join(appData, "chaos-cat-familiar"));
+    if (!stored?.state.sessions?.some((session) => session.id === "shutdown-client")) {
+      throw new Error("Shutdown did not commit the latest state to ccf.sqlite");
     }
+    console.log(`State committed to ccf.sqlite: ${stored.state.sessions.length} sessions, ${stored.state.events.length} events`);
     if (fs.existsSync(path.join(appData, "chaos-cat-familiar", "run-marker.json"))) {
       throw new Error("Successful shutdown left an unclean-run marker");
     }
     const finalLog = fs.readFileSync(path.join(appData, "chaos-cat-familiar", "logs", "chaos-cat-familiar.log"), "utf8");
     if (!finalLog.includes("Stopping Windows shell runtime")) throw new Error("Shutdown log buffer was not flushed");
+    const leftovers = companionTree.filter(isAlive);
+    if (leftovers.length) throw new Error(`Quit left companion children running: ${leftovers.join(", ")}`);
+    if (companionTree.length) console.log("Quit ended the companion's child tree");
   } catch (error) {
     console.error(`[ccf-windows-smoke] Check failed: ${error.stack ?? error.message}`);
     await supervisor.killTree();
+    try {
+      const log = fs.readFileSync(path.join(appData, "chaos-cat-familiar", "logs", "chaos-cat-familiar.log"), "utf8");
+      const lines = log.split(/\r?\n/);
+      const notable = lines.filter((line) => /\[(warn|error)\]/.test(line)).slice(-30);
+      if (notable.length) console.error(`[ccf-windows-smoke] Warnings and errors in the CCF log:\n${notable.join("\n")}`);
+      console.error(`[ccf-windows-smoke] Last lines of the CCF log:\n${lines.slice(-25).join("\n")}`);
+    } catch { /* no log */ }
+    for (const pid of companionFixture.ptyPids()) { try { process.kill(pid); } catch {} }
     throw error;
   } finally {
     await supervisor.closeLog();

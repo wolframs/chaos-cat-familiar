@@ -1,0 +1,23 @@
+{
+  "name": "companion intents: /companion/status, /companion/open and /companion/bubble reach the shell without becoming hook events",
+  "steps": [
+    { "do": "post", "route": "/companion/status", "body": { "session_id": "c-1", "cwd": "C:/fixture/work-companion", "model": { "display_name": "Claude" } }, "expect": { "status": 200, "body": { "ok": true } } },
+    { "do": "post", "route": "/companion/status", "body": { "cwd": "C:/fixture/work-companion" }, "expect": { "status": 400, "body": { "error": "invalid_companion_status" } } },
+    { "do": "post", "route": "/companion/open", "body": "", "expect": { "status": 200, "body": { "ok": true } } },
+    { "do": "post", "route": "/companion/open", "body": { "backend": "codex" }, "expect": { "status": 409, "body": { "error": "Work companion is already running (PID 1)." } } },
+    { "do": "post", "route": "/companion/open", "body": { "backend": "copilot" }, "expect": { "status": 503 } },
+    { "do": "post", "route": "/companion/bubble", "body": { "text": "  Meow  " }, "expect": { "status": 200, "body": { "ok": true, "shown": true } } },
+    { "do": "post", "route": "/companion/bubble", "body": { "event": "agent_idle", "placeholders": { "agent": "temp", "mins": 16 } }, "expect": { "status": 200, "body": { "ok": true, "shown": true } } },
+    { "do": "post", "route": "/companion/bubble", "body": { "event": "unknown_event" }, "expect": { "status": 400, "body": { "error": "unknown_bubble_event" } } },
+    { "do": "post", "route": "/companion/bubble", "body": { "event": "Bad Event" }, "expect": { "status": 400, "body": { "error": "invalid_companion_bubble" } } },
+    { "do": "post", "route": "/companion/status", "body": { "session_id": "c-1", "cwd": "C:/x" }, "headers": { "x-ccf-token": "wrong" }, "expect": { "status": 401 } },
+    { "do": "shell", "expect": { "intents": [
+      { "kind": "status", "sessionId": "c-1" },
+      { "kind": "open", "backend": null },
+      { "kind": "open", "backend": "codex" },
+      { "kind": "bubble", "text": "Meow", "event": null },
+      { "kind": "bubble", "text": null, "event": "agent_idle" },
+      { "kind": "bubble", "text": null, "event": "unknown_event" } ], "toasts": [] } },
+    { "do": "state", "expect": { "events": [], "sessions": [] } }
+  ]
+}

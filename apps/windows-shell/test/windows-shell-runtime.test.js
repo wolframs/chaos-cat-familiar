@@ -10,6 +10,8 @@ import {
   createWindowsShellRuntime
 } from "../runtime/windows-shell-runtime.js";
 import { createFakeElectron, FakeBrowserWindow } from "../test-support/fake-electron.js";
+import { fakeView, until } from "../test-support/fake-view.js";
+import { OVERLAY_TOPICS } from "../renderer/overlay-state.js";
 
 const tempRoots = [];
 after(() => { for (const root of tempRoots) fs.rmSync(root, { recursive: true, force: true, maxRetries: 3, retryDelay: 100 }); });
@@ -149,10 +151,15 @@ for (const duplicateBy of ["toolUseId", "signature"]) {
     const first = sendPermission();
     await waitFor(() => runtime.snapshot().state.approvals.length === 1);
     const id = runtime.snapshot().state.approvals[0].id;
-    const stateMessages = () => overlay.webContents.sent.filter((message) => message.channel === "ccf:state");
-    const beforeDuplicate = stateMessages().length;
+    // The overlay's own port (process-split plan, step 7): every change reaches it as a frame.
+    const view = await fakeView(electron, overlay, { topics: OVERLAY_TOPICS });
+    t.after(() => view.close());
+    await waitFor(() => view.state()?.approvals.length === 1);
+    const stateMessages = () => view.states;
+    // A duplicate adds a waiter, not a change: the core shows the overlay for it (its effect is the sign it arrived).
+    overlay.hide();
     const second = sendPermission();
-    await waitFor(() => stateMessages().length > beforeDuplicate);
+    await waitFor(() => overlay.isVisible());
     const beforeDisconnect = stateMessages().length;
     first.request.destroy();
     await waitFor(() => stateMessages().length > beforeDisconnect);
@@ -167,7 +174,7 @@ for (const duplicateBy of ["toolUseId", "signature"]) {
     await waitFor(() => runtime.snapshot().state.approvals.length === 1);
     last.request.destroy();
     await waitFor(() => runtime.snapshot().state.approvals.length === 0);
-    await waitFor(() => stateMessages().at(-1)?.payload.approvals.length === 0);
+    await waitFor(() => view.state()?.approvals.length === 0);
   });
 }
 
@@ -273,6 +280,10 @@ test("runtime start writes metadata, exposes control plane, and shuts down clean
   assert.equal(diagnosticsResponse.status, 200);
   const diagnosticsSummary = await diagnosticsResponse.json();
   assert.equal(diagnosticsSummary.activeSessionCount, 1);
+  // Final review, item 5: main's synchronous native layout work and liveness checks are timed where they run.
+  assert.ok(diagnosticsSummary.mainLatency.layout.calls > 0, "the overlay's HUD layout ran and was timed");
+  for (const key of ["calls", "totalMs", "maxMs", "over4ms"]) assert.equal(typeof diagnosticsSummary.mainLatency.layout[key], "number");
+  for (const key of ["checks", "totalMs", "maxMs", "over4ms"]) assert.equal(typeof diagnosticsSummary.mainLatency.liveness[key], "number");
 
   const resetOnboardingResponse = await fetch(`http://127.0.0.1:${started.runtime.controlPort}/dispatch-command`, {
     method: "POST",
@@ -600,6 +611,7 @@ test("companion HUDs anchor to the cat and test mode cannot start Claude", async
       mascotLibrary: { list() { return { mascots: [] }; }, async warmBundledAssets() {} }
     }
   });
+  let frames = null;
   try {
     const started = await runtime.start();
     assert.equal([...FakeBrowserWindow.windowsByWebContents.values()].some((window) =>
@@ -652,21 +664,37 @@ test("companion HUDs anchor to the cat and test mode cannot start Claude", async
     assert.equal(Object.hasOwn(queriedWithEvent, "sender"), false, "Electron event details never become companion state");
     const changed = { connected: true, phase: "working", title: "Fresh output", messages: [],
       terminal: { screen: "Latest PTY output", lines: [[{ text: "Latest PTY output" }]], history: [] } };
+    // The conversation page takes whole frames on its own port; main relays none (process-split plan, step 7).
+    frames = await fakeView(electron, conversation, { service: "companion" });
+    const relayed = () => conversation.webContents.sent.filter((message) => message.channel === "ccf:companion").length;
+    const relayedBefore = relayed();
     const readsBeforeChange = snapshotReads;
     companionChanged(changed);
-    const pushed = conversation.webContents.sent.at(-1);
-    assert.equal(pushed.channel, "ccf:companion");
-    assert.equal(pushed.payload.title, changed.title, "push uses the already captured change snapshot");
-    assert.equal(pushed.payload.terminal, changed.terminal);
-    assert.equal(pushed.payload.attachments[0].id, queued.id, "pending attachments decorate the change snapshot");
+    const pushed = await until(() => frames.frames.find(({ frame }) => frame.title === changed.title)?.frame, "the change on the port");
+    assert.equal(pushed.terminal.screen, changed.terminal.screen, "the port carries the whole frame, terminal included");
+    assert.equal(pushed.attachments[0].id, queued.id, "pending attachments decorate the change snapshot");
     assert.equal(snapshotReads, readsBeforeChange, "PTY updates do not read and clone a second snapshot");
+    assert.equal(relayed(), relayedBefore, "main relays no frame to the window");
     const restorePreview = await fetch(`http://127.0.0.1:${started.runtime.controlPort}/companion-preview`, {
       method: "POST", headers: { "content-type": "application/json", "x-ccf-test-token": "fixture" },
       body: JSON.stringify({ connected: true, phase: "idle", title: "Fixture preview", messages: [], terminal: {} })
     });
     assert.equal(restorePreview.status, 200);
-    companionChanged(changed);
-    assert.equal(conversation.webContents.sent.at(-1).payload.title, "Fixture preview", "test preview still overrides live changes");
+    const preview = conversation.webContents.sent.filter((message) => message.channel === "ccf:companion").at(-1).payload;
+    assert.deepEqual({ title: preview.title, preview: preview.preview }, { title: "Fixture preview", preview: true },
+      "a test preview comes from main, marked, so the page shows it instead of the port's frames");
+    // While the page shows the preview, the companion's own changes (a staged image) reach it through main as well;
+    // the design-reload smoke's pasted image never appeared on the page (final review, item 4).
+    const lastPush = () => conversation.webContents.sent.filter((message) => message.channel === "ccf:companion").at(-1).payload;
+    await electron.ipcMain.invoke("ccf:companion-action", { action: "attach-image", name: "Second.png", dataUrl: png });
+    const repushed = await until(() => lastPush().attachments.length === 2 && lastPush(), "the staged image pushed with the preview");
+    assert.deepEqual({ title: repushed.title, preview: repushed.preview, first: repushed.attachments[0]?.id },
+      { title: "Fixture preview", preview: true, first: queued.id });
+    await electron.ipcMain.invoke("ccf:companion-action", { action: "remove-image", id: repushed.attachments[1].id });
+    await until(() => lastPush().attachments.length === 1, "the removal pushed with the preview");
+    companionChanged({ ...changed, title: "Changed under the preview" });
+    assert.equal((await until(() => lastPush().attachments && lastPush(), "a session change under the preview")).title,
+      "Fixture preview", "the preview stays what the page shows");
     failSend = true;
     await assert.rejects(electron.ipcMain.invoke("ccf:companion-action", { action: "send", text: "Look at this", attachmentIds: [queued.id] }), /PTY failure/);
     assert.equal((await electron.ipcMain.invoke("ccf:get-companion")).attachments.length, 1, "failed send retains the image");
@@ -701,6 +729,7 @@ test("companion HUDs anchor to the cat and test mode cannot start Claude", async
     await assert.rejects(electron.ipcMain.invoke("ccf:companion-action", { action: "start" }), /test mode/i);
     assert.equal(starts, 0);
   } finally {
+    frames?.close();
     await runtime.stop();
   }
 });
@@ -995,9 +1024,12 @@ test("shutdown waits for active hook checks and skips startup writes and queued 
       mascotLibrary: { list() { return { mascots: [] }; }, async warmBundledAssets() {} }
     }
   });
-  t.after(async () => { releaseDiagnosis({ hookExists: false }); await runtime.stop(); });
   const starting = runtime.start();
-  const ready = await Promise.race([starting, new Promise((resolve) => setTimeout(() => resolve(null), 100))]);
+  // A start still running when the test ends would leave its core (database, hook server) alive: wait for it first.
+  t.after(async () => { releaseDiagnosis({ hookExists: false }); await starting.catch(() => {}); await runtime.stop(); });
+  // The diagnosis never answers on its own: any bounded start proves startup does not wait for it. Since step 6 the
+  // core opens its storage worker and database first (100 ms was too tight on a busy machine).
+  const ready = await Promise.race([starting, new Promise((resolve) => setTimeout(() => resolve(null), 5000))]);
   assert.ok(ready, "startup must complete while hook diagnosis is pending");
   const queuedRepair = electron.ipcMain.invoke("ccf:repair-hooks");
   let stopped = false;

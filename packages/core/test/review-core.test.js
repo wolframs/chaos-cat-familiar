@@ -81,6 +81,27 @@ test("restored session identity drops obsolete terminal PIDs and refreshes valid
   assert.equal(store.sessions[0].shellPid, 44);
 });
 
+test("sessions track tool calls in flight so the cat can tell tool work from model generation", () => {
+  const store = new SessionStore();
+  store.recordEvent(event({ hookEventName: "UserPromptSubmit", toolName: null }));
+  const session = store.sessions[0];
+  assert.deepEqual(session.toolsInFlight, []);
+  store.recordEvent(event({ hookEventName: "PreToolUse", toolUseId: "a" }));
+  store.recordEvent(event({ hookEventName: "PreToolUse", toolUseId: "b" }));
+  store.recordEvent(event({ hookEventName: "PostToolUse", toolUseId: "a" }));
+  assert.deepEqual(session.toolsInFlight, ["b"]);
+  store.recordEvent(event({ hookEventName: "PostToolUseFailure", toolUseId: "b" }));
+  assert.deepEqual(session.toolsInFlight, []);
+  store.recordEvent(event({ hookEventName: "PreToolUse", toolUseId: null }));
+  store.recordEvent(event({ hookEventName: "PostToolUse", toolUseId: null }));
+  assert.deepEqual(session.toolsInFlight, []);
+  store.recordEvent(event({ hookEventName: "PreToolUse", toolUseId: "c" }));
+  store.recordEvent(event({ hookEventName: "Stop", toolName: null }));
+  assert.deepEqual(session.toolsInFlight, []);
+  store.recordEvent(event({ hookEventName: "PreToolUse", toolUseId: "d" }));
+  assert.deepEqual(new SessionStore(store.sessions).sessions[0].toolsInFlight, []);
+});
+
 test("logging failure during enqueue rolls back its waiter", async () => {
   const core = controller({ logger: { info() { throw new Error("EPERM log"); } } });
   let resolved = false;

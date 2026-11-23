@@ -4,7 +4,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { createWindowsShellRuntime } from "../runtime/windows-shell-runtime.js";
-import { createFakeElectron } from "../test-support/fake-electron.js";
+import { createFakeElectron, FakeBrowserWindow } from "../test-support/fake-electron.js";
 
 test("approval IPC normalizes answers, feedback and permission updates while retaining tool input", { timeout: 8000 }, async (t) => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "ccf-approval-ipc-"));
@@ -34,4 +34,33 @@ test("approval IPC normalizes answers, feedback and permission updates while ret
     for (const [key, value] of Object.entries(expected)) assert.deepEqual(body.hookSpecificOutput.decision[key], value);
     assert.equal(runtime.snapshot().state.notifications.find((item) => item.eventId === approval.event.id)?.resolutionOutcome, "allowed");
   }
+});
+
+// Review 2026-11-05 (P2): the core's "show the overlay" effect used to send the full state to all three windows itself,
+// past the overlay-sized projection (the overlay got the event history) and past the guard that keeps a projection
+// without history away from the dashboard and diagnostics. Showing now publishes the way every change does.
+test("showing the overlay for an approval sends the overlay its overlay-sized state", { timeout: 8000 }, async (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "ccf-show-overlay-"));
+  const electron = createFakeElectron({ home: root, appData: root });
+  const runtime = createWindowsShellRuntime({ electron,
+    processLike: { env: { CCF_HOME_OVERRIDE: root, CCF_APPDATA_OVERRIDE: root, CCF_PORT_OVERRIDE: "0", CCF_TEST_MODE: "1" }, argv: [], execPath: process.execPath, pid: process.pid },
+    services: { hookInstaller: { async diagnose() { return { hookExists: true, drift: { healthy: true }, health: { ok: true } }; } }, mascotLibrary: { list() { return { mascots: [] }; } } }
+  });
+  const controller = new AbortController();
+  t.after(async () => { controller.abort(); await runtime.stop(); fs.rmSync(root, { recursive: true, force: true }); });
+  const started = await runtime.start();
+  const pending = fetch(`http://127.0.0.1:${started.runtime.hookPort}/hook`, { method: "POST", signal: controller.signal,
+    headers: { "content-type": "application/json", "x-ccf-token": started.settings.hookToken },
+    body: JSON.stringify({ hook_event_name: "PermissionRequest", session_id: "show-1", tool_name: "Bash", tool_input: { command: "echo" } }) });
+  pending.catch(() => {});
+  const overlay = () => [...FakeBrowserWindow.windowsByWebContents.values()].find((window) => !window.destroyed
+    && String(window.loadedFile ?? "").endsWith("overlay.html"));
+  const deadline = Date.now() + 3000;
+  while (!(overlay()?.visible && runtime.snapshot().state.approvals.length) && Date.now() < deadline) {
+    await new Promise((resolve) => setTimeout(resolve, 5));
+  }
+  assert.equal(overlay().visible, true, "the approval showed the overlay");
+  // Step 7: the overlay takes the core's state on its own port (sessions and approvals, never the event history).
+  assert.equal(overlay().webContents.sent.filter((message) => message.channel === "ccf:state").length, 0,
+    "main sends the overlay no state");
 });

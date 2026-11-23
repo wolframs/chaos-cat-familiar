@@ -25,7 +25,10 @@ export class CompanionBackends extends EventEmitter {
     const snapshot = { ...this.delivery?.conversation(this.backend), ...(changeSnapshot??this.current.getSnapshot()) };
     if (!snapshot.conversationId) snapshot.conversationId = this.delivery?.conversation(this.backend)?.conversationId ?? null;
     const unresolved = snapshot.conversationId && this.delivery ? this.delivery.unresolved({ backend: this.backend, conversationId: snapshot.conversationId }) : [];
+    // Delivery records unavailable (process-split step 6): visible, and Start is the way back.
+    const blocked = this.delivery?.blocked ?? null;
     return { ...snapshot, backend: this.backend, generation: this.generation,switching:this.switching,watcher:this.watcher?.getSnapshot?.()??{state:'disabled'}, ...(this.lifecycleError?{error:this.lifecycleError}:{}),
+      ...(blocked ? { deliveryBlocked: { ...blocked }, ...(this.lifecycleError ? {} : { error: `Conversation records are unavailable (${blocked.reason}). Sends that need them are blocked; stop and start the companion to resume.` }) } : {}),
       ...(unresolved.length ? { submission: unresolved.at(-1) } : {}) };
   }
   #assertTransitionAvailable(){if(this.switching||this.disposing)throw new Error('A companion backend switch or cleanup is already in progress.');}
@@ -67,6 +70,13 @@ export class CompanionBackends extends EventEmitter {
   async start(options) {
     this.#assertTransitionAvailable();
     if(this.starting)throw new Error('Companion is already starting.');
+    // Start is the explicit resume after delivery storage was unavailable: the durable records are reloaded first.
+    // Codex needs them; Claude starts without them (they only remember its conversation).
+    if(this.delivery?.blocked){
+      try{await this.delivery.resume();}
+      catch(error){if(this.backend==='codex'){this.#fault(error);throw error;}}
+      this.emit('change',this.getSnapshot());
+    }
     if(this.current.getSnapshot().connected)return this.getSnapshot();
     this.starting=true;this.lifecycleError=null;let memory,launchAttempted=false;
     try{
@@ -83,7 +93,8 @@ export class CompanionBackends extends EventEmitter {
         ...(memory?{developerInstructions:memory.text,memoryContext:{revision:memory.contextId}}:{})});
       const snapshot=this.current.getSnapshot();
       if(snapshot.conversationId){
-        this.delivery?.rememberConversation({backend:this.backend,conversationId:snapshot.conversationId,sessionRootId:snapshot.sessionRootId??null,generation:this.generation});
+        const remembered=this.delivery?.rememberConversation({backend:this.backend,conversationId:snapshot.conversationId,sessionRootId:snapshot.sessionRootId??null,generation:this.generation});
+        if(this.backend==='codex')await remembered;else await remembered?.catch(()=>{});
         this.current.setUnresolvedSubmissions?.(this.delivery?.unresolved(snapshot)??[]);
       }
       if(this.backend==='codex'&&this.habitat){
@@ -103,12 +114,15 @@ export class CompanionBackends extends EventEmitter {
     }finally{this.starting=false;}
   }
   #fault(error){this.lifecycleError=String(error.message??error);this.emit('change',this.getSnapshot());}
-  observeConversation({backend,conversationId,sessionRootId=null}){
+  async observeConversation({backend,conversationId,sessionRootId=null}){
     if(this.switching||this.disposing)return false;
     if(backend!==this.backend||!this.current.getSnapshot().connected||!conversationId)return false;
     const previous=this.delivery?.conversation(backend);
+    if(previous?.conversationId===conversationId&&previous.sessionRootId===sessionRootId&&previous.generation===this.generation)return true;
+    // Records unavailable: the snapshot says so already; a warning per hook event would only repeat it.
+    if(this.delivery?.blocked)return false;
     if(previous?.conversationId&&previous.conversationId!==conversationId&&this.delivery.unresolved(previous).length)throw new Error('Another conversation has uncertain submissions; reconcile first.');
-    this.delivery?.rememberConversation({backend,conversationId,sessionRootId,generation:this.generation});return true;
+    await this.delivery?.rememberConversation({backend,conversationId,sessionRootId,generation:this.generation});return true;
   }
   async submit({ id = randomUUID(), text = '', attachments = [], draftRevision, eventIds = [], source = 'user' } = {}) {
     this.#assertTransitionAvailable();
@@ -122,6 +136,7 @@ export class CompanionBackends extends EventEmitter {
         return await transmit();
       }
       if (!this.delivery) throw new Error('Durable Codex submission store is unavailable.');
+      if (this.delivery.blocked) throw Object.assign(new Error(`Codex sends are blocked until the companion is started again: conversation records are unavailable (${this.delivery.blocked.reason}).`), { code: 'delivery_blocked' });
       const snapshot = this.current.getSnapshot();
       if (!snapshot.connected || snapshot.phase !== 'idle') return { id, state: 'rejected', reason: 'Wait until the Codex turn is idle.', draftRevision };
       let memory=this.habitatClaimed?await this.habitat.prepare(snapshot.memoryRefreshNeeded?'compaction':'turn'):null;
@@ -136,16 +151,16 @@ export class CompanionBackends extends EventEmitter {
       this.emit('change', this.getSnapshot()); return result;
     } finally { this.submitting = false; }
   }
-  resolveUnknown({ submissionId, disposition }) {
+  async resolveUnknown({ submissionId, disposition }) {
     this.#assertTransitionAvailable();
     if (!['acknowledged', 'confirmed-not-sent'].includes(disposition)) throw new Error('Choose an explicit uncertain-submission resolution.');
-    this.delivery.resolveUnknown(submissionId, { action: disposition === 'acknowledged' ? 'retain' : disposition, userInitiated: true });
+    await this.delivery.resolveUnknown(submissionId, { action: disposition === 'acknowledged' ? 'retain' : disposition, userInitiated: true });
     this.current.resolveUnknown?.(submissionId); this.emit('change', this.getSnapshot()); return true;
   }
   async resolveRequest(payload) { this.#assertTransitionAvailable();return this.current.resolveRequest?.(payload) ?? false; }
   history(payload) { return this.current.history?.(payload) ?? []; }
   getOutput(payload){if(this.backend!=='codex')throw new Error('Structured output is unavailable for this backend.');return this.current.getOutput(payload);}
-  write(text) { this.#assertTransitionAvailable();if (this.backend !== 'claude') throw new Error('Terminal input is unavailable for Codex.'); return this.current.write(text); }
+  write(text, options) { this.#assertTransitionAvailable();if (this.backend !== 'claude') throw new Error('Terminal input is unavailable for Codex.'); return this.current.write(text, options); }
   resize(cols, rows) { if(!this.switching&&!this.disposing&&this.backend === 'claude') return this.current.resize(cols, rows); }
   interrupt() { this.#assertTransitionAvailable();return this.current.interrupt(); }
   updatePresentation(payload) { if(!this.switching&&!this.disposing&&this.backend === 'claude') return this.current.updatePresentation?.(payload); }
@@ -157,7 +172,7 @@ export class CompanionBackends extends EventEmitter {
     if(disposition!=='stop'&&(this.submitting||this.starting||this.current.getSnapshot().phase!=='idle'||this.delivery?.unresolved(this.getSnapshot()).length))throw new Error('Wait for an idle turn and resolve uncertain submissions before ending the day.');
     await this.watcher?.stop();await this.current.stop();
     if(this.habitatClaimed){
-      try{await this.habitat.close(disposition);if(disposition!=='stop'){this.delivery?.closeGeneration(this.generation);this.generation=randomUUID();}}
+      try{await this.habitat.close(disposition);if(disposition!=='stop'){await this.delivery?.closeGeneration(this.generation);this.generation=randomUUID();}}
       finally{await this.habitat.stop();this.habitatClaimed=false;}
     }
     this.emit('change',this.getSnapshot());
@@ -171,7 +186,7 @@ export class CompanionBackends extends EventEmitter {
     try{
       if(owner.conversationId)throw new Error('This launch has a bound conversation; resume it or end its day after inspection.');
       await this.habitat.close('day-end',{unresolvedDisposition:'retain-unknown'});
-      this.delivery?.closeGeneration(owner.generation);this.generation=randomUUID();this.lifecycleError=null;
+      await this.delivery?.closeGeneration(owner.generation);this.generation=randomUUID();this.lifecycleError=null;
     }finally{await this.habitat.stop();this.habitatClaimed=false;}
     this.emit('change',this.getSnapshot());return true;
   }

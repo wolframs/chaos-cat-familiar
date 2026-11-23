@@ -4,10 +4,11 @@ export class InMemoryLogger {
     this.entries = [];
   }
 
-  log(level, category, message, context = {}) {
+  // timestamp: kept for entries logged elsewhere first (main forwards its log lines to the core's log).
+  log(level, category, message, context = {}, timestamp = null) {
     this.entries.unshift({
       id: crypto.randomUUID(),
-      timestamp: new Date(),
+      timestamp: timestamp instanceof Date && !Number.isNaN(timestamp.getTime()) ? timestamp : new Date(),
       level,
       category,
       message,

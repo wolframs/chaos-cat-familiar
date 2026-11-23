@@ -8,10 +8,12 @@ import os from "node:os";
 import path from "node:path";
 import {
   ElectronActivationService,
-  ElectronHookInstallationService,
   ElectronNotificationService,
-  __testing
+  __testing as platformTesting
 } from "../services/platform-services.js";
+import { ElectronHookInstallationService, __testing as hookTesting } from "../services/claude-hook-installer.js";
+
+const __testing = { ...platformTesting, ...hookTesting };
 
 const execFileAsync = promisify(execFile);
 
@@ -154,6 +156,19 @@ test("window fallback excludes unrelated editor windows", async () => {
   const result = await service.activateTerminal({ projectDir: "C:\\repos\\project" });
   assert.deepEqual(focused, [2]);
   assert.equal(result.targetSource, "window_fallback");
+});
+
+test("without launchFallback no window means no new terminal, only a reason", async () => {
+  const opened = [];
+  const service = new ElectronActivationService({ openPath: async (p) => opened.push(p) }, null, {
+    listRunningWindows: async () => [],
+    listProcessAncestorIds: async () => [],
+    focusProcessWindow: async () => { throw new Error("Unexpected focus"); }
+  });
+  const result = await service.activateTerminal({ projectDir: "C:\\repos\\project", launchFallback: false });
+  assert.equal(result.ok, false);
+  assert.equal(result.reason, "no_terminal_window");
+  assert.deepEqual(opened, []);
 });
 
 class FakeLogger {

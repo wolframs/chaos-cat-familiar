@@ -1,0 +1,91 @@
+/* The companion's side panel, left of the conversation (colours from companion-conversation.css). One line per row;
+   the window is not focusable, so nothing here takes keyboard input. */
+@font-face { font-family: Rubik; src: url("../assets/fonts/Rubik-Regular.ttf"); font-weight: 400; }
+@font-face { font-family: Rubik; src: url("../assets/fonts/Rubik-SemiBold.ttf"); font-weight: 600; }
+* { box-sizing: border-box; scrollbar-width: thin; scrollbar-color: #705782 transparent; }
+*::-webkit-scrollbar { width: 5px; height: 5px; }
+*::-webkit-scrollbar-track, *::-webkit-scrollbar-corner { background: transparent; }
+*::-webkit-scrollbar-thumb { background: #705782; border-radius: 999px; }
+*::-webkit-scrollbar-button { display: none; width: 0; height: 0; }
+html, body { width: 100%; height: 100%; margin: 0; overflow: hidden; background: transparent; color: #f5eefb;
+  font-family: Rubik, "Segoe UI", sans-serif; user-select: none; }
+
+.surface { position: absolute; inset: 8px; display: flex; flex-direction: column; background: rgba(16, 13, 24, .97);
+  border-radius: 16px; padding: 10px 10px 8px 12px; overflow: hidden; }
+
+.header { flex: 0 0 22px; display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 0 6px; }
+.title { font: 600 11px Rubik, sans-serif; color: #baa5c7; white-space: nowrap; }
+.status { font-size: 10.5px; font-variant-numeric: tabular-nums; color: #9b89aa; white-space: nowrap; overflow: hidden;
+  text-overflow: ellipsis; min-width: 0; }
+.surface[data-state="stale"] .status, .surface[data-state="missing"] .status,
+.surface[data-state="unconfigured"] .status { color: #ffc170; }
+.surface[data-state="invalid"] .status { color: #ffbcb8; }
+.status .dropped { color: #9b89aa; }
+.status.flash { color: #dec7ef; }
+.status.flash.error { color: #ffbcb8; }
+
+.list { flex: 1; min-height: 0; overflow-y: auto; overflow-x: hidden; padding-bottom: 4px; }
+.surface.dim .list { opacity: .55; }
+.message { padding: 8px 6px; font-size: 11.5px; color: #9b89aa; }
+
+.section-head { height: 24px; margin-top: 6px; display: flex; align-items: center; gap: 6px; padding: 0 6px;
+  border-radius: 6px; cursor: pointer; font: 600 10.5px Rubik, sans-serif; text-transform: uppercase;
+  letter-spacing: .07em; color: #a38eae; white-space: nowrap; overflow: hidden; }
+.section-head:hover { background: rgba(206, 153, 246, .06); }
+.section-head .name { flex: 0 0 auto; }
+.section-head .count { flex: 0 0 auto; font-size: 10px; letter-spacing: 0; color: #dec7ef; background: #30213f;
+  border-radius: 999px; padding: 0 6px; line-height: 16px; }
+.section-head .summary { flex: 0 1 auto; min-width: 0; font: 400 10px Rubik, sans-serif; letter-spacing: 0;
+  text-transform: none; color: #9b89aa; overflow: hidden; text-overflow: ellipsis; }
+.section-head .warn { flex: 0 0 auto; color: #ffc170; letter-spacing: 0; }
+.section-head .note { flex: 0 1 auto; min-width: 0; font: 400 10px Rubik, sans-serif; letter-spacing: 0;
+  text-transform: none; color: #ffc170; overflow: hidden; text-overflow: ellipsis; }
+.section-head .caret { margin-left: auto; flex: 0 0 auto; color: #77707e; letter-spacing: 0; }
+
+.row { height: 22px; display: grid; grid-template-columns: 14px 1fr auto; gap: 6px; align-items: center;
+  padding: 0 6px; border-radius: 6px; }
+.row:hover { background: rgba(206, 153, 246, .10); }
+.row.action { cursor: pointer; }
+.row .glyph { text-align: center; font-size: 11px; color: #a38eae; }
+.row .text { min-width: 0; font: 400 12.5px Rubik, sans-serif; color: #ded6ea; white-space: nowrap; overflow: hidden;
+  text-overflow: ellipsis; }
+.row .trail { display: flex; align-items: center; gap: 4px; min-width: 0; }
+.row .meta { font-size: 10.5px; font-variant-numeric: tabular-nums; color: #9b89aa; white-space: nowrap; }
+.row[data-tone="attention"] .glyph { color: #ffc170; }
+.row[data-tone="attention"] .text { color: #ffe0b5; }
+.row[data-tone="busy"] .glyph { color: #bd7dff; animation: pulse 1.6s ease-in-out infinite; }
+.row[data-tone="idle"] .glyph, .row[data-tone="ok"] .glyph { color: #70d5a1; }
+.row[data-tone="muted"] .glyph { color: #77707e; }
+.row.empty .text { color: #77707e; font-size: 11.5px; }
+@keyframes pulse { 50% { opacity: .45; } }
+
+.chip { font: 600 10px Rubik, sans-serif; color: #dec7ef; background: #30213f; border-radius: 5px; padding: 1px 6px;
+  max-width: 72px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; cursor: pointer; line-height: 14px; }
+.chip:hover { background: #3d2a51; }
+.copy-button { display: none; font-size: 11px; color: #a38eae; cursor: pointer; padding: 0 2px; }
+.row:hover .copy-button { display: inline; }
+.copy-button:hover { color: #dec7ef; }
+/* Mark an idle session done: always shown, faint until hovered. A row marked here dims until the next file drops it. */
+.done-button { font-size: 11px; color: #77707e; cursor: pointer; padding: 0 3px; border-radius: 4px; }
+.done-button:hover { color: #70d5a1; background: rgba(112, 213, 161, .12); }
+.row.marked .text, .row.marked .glyph { opacity: .45; }
+.row.heading { margin-top: 3px; }
+.row.heading .text { font-weight: 500; font-size: 11.5px; color: #b9a9c8; letter-spacing: .02em; }
+.row[data-depth] { position: relative; }
+.row[data-depth="1"] { padding-left: 20px; }
+.row[data-depth="2"] { padding-left: 34px; }
+.row[data-depth]::before { content: ""; position: absolute; top: 0; bottom: 0; border-left: 1px solid rgba(163, 142, 174, .28); }
+.row[data-depth="1"]::before { left: 12px; }
+.row[data-depth="2"]::before { left: 26px; }
+
+.more { height: 22px; display: flex; align-items: center; padding: 0 6px 0 26px; border-radius: 6px; font-size: 11px;
+  color: #ce9af4; cursor: pointer; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.more:hover { background: rgba(206, 153, 246, .10); }
+
+.strip { position: absolute; left: 8px; right: 8px; bottom: 8px; background: rgba(29, 20, 41, .98); border-radius: 10px;
+  padding: 6px 9px; font: 400 11px/1.35 Rubik, sans-serif; color: #c9b6d7; pointer-events: none;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, .35); }
+.strip.top { top: 34px; bottom: auto; }
+.strip .body { display: -webkit-box; -webkit-line-clamp: 4; -webkit-box-orient: vertical; overflow: hidden;
+  overflow-wrap: anywhere; }
+.strip .target { color: #9b89aa; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }

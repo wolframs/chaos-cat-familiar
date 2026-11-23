@@ -15,14 +15,17 @@ if (-not (Test-Path $resolvedConfigPath)) {
 $config = Get-Content $resolvedConfigPath | ConvertFrom-Json
 $appVersion = if ($null -ne $config.version) { $config.version } else { "0.1.0" }
 
-$sourceDir = Join-Path $repoRoot $config.sourceDir
 $outDir = Join-Path $repoRoot $config.outDir
+# The packaged app is a staged folder that mirrors the repo for what CCF runs (process-split plan, step 7): main, core,
+# companion and renderer import packages/core by relative path, and node-pty/@xterm live in the root node_modules.
+$sourceDir = Join-Path $outDir "stage"
+# What stays outside app.asar (files other programs open by path) is defined once, in the stage script.
+$patterns = & node (Join-Path $PSScriptRoot "stage-electron-app.mjs") --patterns | ConvertFrom-Json
+if ($LASTEXITCODE -ne 0 -or -not $patterns.unpack) { throw "Reading the asar unpack patterns from stage-electron-app.mjs failed" }
+$asarUnpack = $patterns.unpack
+$asarUnpackDir = $patterns.unpackDir
 $iconPath = Join-Path $repoRoot $config.icon
 $instructionsPath = Join-Path $repoRoot "packaging\windows\input\package-electron-app.instructions.txt"
-
-if (-not (Test-Path $sourceDir)) {
-  throw "Electron app source directory was not found at $sourceDir"
-}
 
 if (-not (Test-Path $iconPath)) {
   throw "Windows icon was not found at $iconPath. Run 'npm run assets:windows:pixel' first."
@@ -38,7 +41,8 @@ $packagerCommand = @(
   "--arch=$($config.arch)",
   "--out=`"$outDir`"",
   "--overwrite",
-  "--asar",
+  "--asar.unpack=`"$asarUnpack`"",
+  "--asar.unpackDir=`"$asarUnpackDir`"",
   "--prune=false",
   "--icon=`"$iconPath`"",
   "--executable-name=`"$($config.executableName)`"",
@@ -79,6 +83,8 @@ if (-not $RunPackager) {
 
 Push-Location $repoRoot
 try {
+  & node .\scripts\windows\stage-electron-app.mjs --out $sourceDir
+  if ($LASTEXITCODE -ne 0) { throw "Staging the app failed with exit code $LASTEXITCODE" }
   & npm exec --workspace @chaos-cat-familiar/windows-shell electron-packager -- `
     $sourceDir `
     $config.productName `
@@ -86,7 +92,8 @@ try {
     --arch=$($config.arch) `
     --out=$outDir `
     --overwrite `
-    --asar `
+    "--asar.unpack=$asarUnpack" `
+    "--asar.unpackDir=$asarUnpackDir" `
     --prune=false `
     --icon=$iconPath `
     --executable-name=$($config.executableName) `

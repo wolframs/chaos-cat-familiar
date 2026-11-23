@@ -38,8 +38,18 @@ window.addEventListener("unhandledrejection", (event) => {
   });
 });
 
+// A window's own state or frames port (process-split plan, step 5): main posts it here, and the page takes it from a
+// window message (a MessagePort cannot cross the context bridge as a value; this is Electron's documented way).
+ipcRenderer.on("ccf:port", (event, info) => {
+  window.postMessage({ ccfPort: info }, "*", event.ports);
+});
+
 contextBridge.exposeInMainWorld("ccf", {
-  getState: () => invoke("ccf:get-state"),
+  subscribe: (request) => invoke("ccf:subscribe", request),
+  unsubscribe: (id) => invoke("ccf:unsubscribe", { id }),
+  reportViewRevision: (payload) => ipcRenderer.send("ccf:view-revision", payload),
+  getShellState: () => invoke("ccf:get-shell-state"),
+  onShellState: (handler) => ipcRenderer.on("ccf:shell-state", (_event, value) => handler(value)),
   getSettings: () => invoke("ccf:get-settings"),
   getCompanion: () => invoke("ccf:get-companion"),
   getCompanionStatus: () => invoke("ccf:get-companion-status"),
@@ -71,12 +81,17 @@ contextBridge.exposeInMainWorld("ccf", {
   openMascotManager: () => invoke("ccf:open-mascot-manager"),
   openMascotPreview: () => invoke("ccf:open-mascot-preview"),
   showOverlayContextMenu: () => invoke("ccf:show-overlay-context-menu"),
+  // The shared companion menu at the cursor, on the cat (mascot mode).
+  showCompanionMenu: () => invoke("ccf:show-companion-menu"),
+  // The side panel: main's snapshot of state/panel.json, its pushes, and the row actions (open, copy, focus).
+  getSidePanel: () => invoke("ccf:get-side-panel"),
+  onSidePanel: (handler) => ipcRenderer.on("ccf:side-panel", (_event, value) => handler(value)),
+  sidePanelAction: (payload) => invoke("ccf:side-panel-action", payload),
   getOverlayBounds: () => invoke("ccf:get-overlay-bounds"),
   setOverlayBounds: (payload) => ipcRenderer.send("ccf:set-overlay-bounds", payload),
   windowAction: (action) => invoke("ccf:window-action", action),
   log: (payload) => ipcRenderer.send("ccf:renderer-log", payload),
   onHookInstallResult: (handler) => ipcRenderer.on("hook-install-result", (_event, value) => handler(value)),
-  onState: (handler) => ipcRenderer.on("ccf:state", (_event, value) => handler(value)),
   onCompanion: (handler) => ipcRenderer.on("ccf:companion", (_event, value) => handler(value)),
   onCompanionStatus: (handler) => ipcRenderer.on("ccf:companion-status", (_event, value) => handler(value)),
   onCompanionTextSize: (handler) => {

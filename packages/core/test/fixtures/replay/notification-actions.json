@@ -1,0 +1,27 @@
+{
+  "name": "notification actions: derived notifications, mark read, dismiss, mark all read",
+  "steps": [
+    { "do": "hook", "body": { "hook_event_name": "SessionStart", "session_id": "s-n", "cwd": "C:/fixture/beta" } },
+    { "do": "hook", "body": { "hook_event_name": "Notification", "session_id": "s-n", "notification_type": "idle_prompt", "message": "Waiting for you" } },
+    { "do": "hook", "body": { "hook_event_name": "Notification", "session_id": "s-n", "notification_type": "elicitation_dialog" } },
+    { "do": "hook", "body": { "hook_event_name": "Notification", "session_id": "s-n", "notification_type": "not_a_known_type" } },
+    { "do": "hook", "body": { "hook_event_name": "Stop", "session_id": "s-n" } },
+    { "do": "state", "expect": {
+      "notifications": [ { "category": "session_lifecycle", "isRead": false }, { "category": "elicitation_dialog", "isRead": false }, { "category": "idle_alert", "isRead": false }, { "category": "session_lifecycle", "isRead": false } ],
+      "unread": 4,
+      "events": [ "Stop", "Notification", "Notification", "Notification", "SessionStart" ] } },
+    { "do": "notification", "action": "mark-read", "notification": 1, "expect": { "result": true } },
+    { "do": "state", "expect": { "notifications": [ { "isRead": false }, { "isRead": true }, { "isRead": false }, { "isRead": false } ], "unread": 3 } },
+    { "do": "notification", "action": "mark-read", "notification": 7, "expect": { "result": false } },
+    { "do": "notification", "action": "dismiss", "notification": 0, "expect": { "result": true } },
+    { "do": "notification", "action": "dismiss", "notification": 9, "expect": { "result": false } },
+    { "do": "state", "expect": { "notifications": [ { "category": "elicitation_dialog" }, { "category": "idle_alert" }, { "category": "session_lifecycle" } ], "unread": 2 } },
+    { "do": "notification", "action": "mark-all-read", "expect": { "result": true } },
+    { "do": "notification", "action": "mark-all-read", "expect": { "result": false } },
+    { "do": "notification", "action": "explode", "expect": { "result": false } },
+    { "do": "state", "expect": { "notifications": [ { "isRead": true }, { "isRead": true }, { "isRead": true } ], "unread": 0 } },
+    { "do": "hook", "body": { "hook_event_name": "SessionEnd", "session_id": "s-n" } },
+    { "do": "state", "expect": { "sessions": [ { "id": "s-n", "status": "ended", "phase": "idle" } ] } },
+    { "do": "shell", "expect": { "toasts": [ "Session Started", "Claude is Waiting", "Input Needed", "Claude Finished", "Session Ended" ] } }
+  ]
+}

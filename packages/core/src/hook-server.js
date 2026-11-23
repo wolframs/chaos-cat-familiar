@@ -52,9 +52,10 @@ function readJsonBody(req) {
 }
 
 export class HookServer {
-  constructor({ controller, host = "127.0.0.1", port = 49152, authToken = null,
+  constructor({ controller, host = "127.0.0.1", port = 49152, authToken = null, instance = null,
     onCompanionStatus = null, onCompanionOpen = null, onCompanionBubble = null }) {
     this.controller = controller;
+    this.instance = instance ?? randomUUID();
     this.authToken = authToken || randomBytes(32).toString("hex");
     this.host = host;
     this.port = port;
@@ -109,6 +110,14 @@ export class HookServer {
         if (req.method === "GET" && req.url === "/health") {
           res.writeHead(200, { "content-type": "text/plain" });
           res.end("ok");
+          return;
+        }
+
+        // Authenticated readiness: the core probes itself here before it reports its port, so main installs hooks
+        // only for a listener that is this server and accepts this token.
+        if (req.method === "GET" && req.url === "/ready") {
+          res.writeHead(200, { "content-type": "application/json; charset=utf-8" });
+          res.end(JSON.stringify({ ok: true, instance: this.instance }));
           return;
         }
 

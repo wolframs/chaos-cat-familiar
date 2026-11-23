@@ -1,4 +1,28 @@
+import childProcess from "node:child_process";
 import { EventEmitter } from "node:events";
+import { InProcessCoreHost } from "../core/core-in-process.js";
+import { InProcessCompanionHost } from "../companion/companion-in-process.js";
+
+// A Node stand-in for Electron's utilityProcess where Electron is not available (real-process tests, the load
+// fixture): a child forked with structured-clone serialization, which is what a utility process speaks. The core's
+// console mirror is dropped by default; its stderr shows. `children` lists the live ones (tests kill them).
+export function nodeUtilityProcess({ execArgv = [], env = null, stdout = "ignore" } = {}) {
+  const children = new Set();
+  return {
+    children,
+    fork(modulePath, args = [], options = {}) {
+      const child = childProcess.fork(modulePath, args, {
+        serialization: "advanced",
+        stdio: ["ignore", stdout, "inherit", "ipc"],
+        env: { ...(env ?? process.env), ...(options.env ?? {}) },
+        execArgv: [...(options.execArgv ?? []), ...execArgv]
+      });
+      children.add(child);
+      child.once("exit", () => children.delete(child));
+      return child;
+    }
+  };
+}
 
 class FakeWebContents extends EventEmitter {
   constructor(owner) {
@@ -9,6 +33,18 @@ class FakeWebContents extends EventEmitter {
 
   send(channel, payload) {
     this.sent.push({ channel, payload });
+  }
+
+  // Electron's postMessage with transferred ports (a window's own state port, step 5).
+  postMessage(channel, message, transfer = []) {
+    this.posted ??= [];
+    const entry = { channel, message, ports: transfer };
+    this.posted.push(entry);
+    this.emit("test:posted", entry);
+  }
+
+  isDestroyed() {
+    return this.owner.destroyed;
   }
 }
 
@@ -66,8 +102,13 @@ export class FakeBrowserWindow extends EventEmitter {
     return this.focused;
   }
 
+  // FakeBrowserWindow.readBack: how Windows hands bounds back at a fractional display scale (at 110 % a window set to
+  // y 775, height 144 reads back as y 774, height 146), or null for exactly what was set.
+  static readBack = null;
+
   setBounds(bounds) {
     this.bounds = { ...this.bounds, ...bounds };
+    if (FakeBrowserWindow.readBack) this.bounds = FakeBrowserWindow.readBack(this.bounds);
   }
 
   getBounds() {
@@ -142,6 +183,7 @@ export class FakeBrowserWindow extends EventEmitter {
     this.destroyed = true;
     this.visible = false;
     FakeBrowserWindow.windowsByWebContents.delete(this.webContents);
+    this.webContents.emit("destroyed");
   }
 
   isDestroyed() {
@@ -246,11 +288,16 @@ export class FakeIpcMain extends EventEmitter {
   }
 
   async invoke(channel, ...args) {
+    return this.invokeFrom(null, channel, ...args);
+  }
+
+  // As a given window's renderer calls it (event.sender is its webContents).
+  async invokeFrom(sender, channel, ...args) {
     const handler = this.handlers.get(channel);
     if (!handler) {
       throw new Error(`Missing IPC handler for ${channel}`);
     }
-    return handler({ sender: null }, ...args);
+    return handler({ sender }, ...args);
   }
 }
 
@@ -316,15 +363,22 @@ export function createFakeElectron(paths = {}) {
       return "";
     }
   };
+  // popupCalls: every Menu.popup, with the template and the window it popped on (the cat's menu).
   const menu = {
     lastTemplate: null,
+    popupCalls: [],
     buildFromTemplate(template) {
       menu.lastTemplate = template;
       return {
         template,
-        popup() {}
+        popup(options = {}) { menu.popupCalls.push({ template, window: options.window ?? null }); }
       };
     }
+  };
+  const clipboard = {
+    text: null,
+    writeText(value) { clipboard.text = String(value); },
+    readImage() { return { isEmpty: () => true }; }
   };
   const nativeImage = {
     createFromDataURL(value) {
@@ -339,9 +393,13 @@ export function createFakeElectron(paths = {}) {
     Menu: menu,
     ipcMain,
     nativeImage,
+    clipboard,
     shell,
     screen,
     globalShortcut,
-    Notification: FakeNotification
+    Notification: FakeNotification,
+    // Not Electron's: without utilityProcess the runtime composes core and companion in this process, with these hosts
+    // (main itself never loads either composition; process-split plan, step 7).
+    inProcessHosts: { core: InProcessCoreHost, companion: InProcessCompanionHost }
   };
 }

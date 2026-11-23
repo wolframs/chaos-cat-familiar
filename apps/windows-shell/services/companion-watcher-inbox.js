@@ -32,8 +32,8 @@ export class CompanionWatcherInbox extends EventEmitter {
             if (!line.trim()) continue;
             const snapshot = this.backend.getSnapshot();
             if (snapshot.backend !== 'codex' || !snapshot.conversationId || !snapshot.generation) throw new Error('Watcher has no owning Codex conversation.');
-            const receipt = this.delivery.receive(JSON.parse(line), snapshot);
-            // receive returns only after the atomic durable commit. A write failure
+            const receipt = await this.delivery.receive(JSON.parse(line), snapshot);
+            // receive resolves only after the durable commit was acknowledged. A write failure
             // sends no receipt, so the unchanged source ID can be replayed safely.
             transport.writable.write(`${JSON.stringify(receipt)}\n`);
           }
@@ -53,7 +53,7 @@ export class CompanionWatcherInbox extends EventEmitter {
     if (this.closed) return;
     const snapshot = this.backend.getSnapshot();
     if (snapshot.backend !== 'codex' || !snapshot.connected || snapshot.phase !== 'idle') return;
-    const events = this.delivery.nextBatch(snapshot);
+    const events = await this.delivery.nextBatch(snapshot);
     if (!events.length) return;
     const result=await this.backend.submit({ id: randomUUID(), text: `Watcher observations (${snapshot.generation}):\n${events.map(event =>
       `[${event.severity}] ${event.source} (${event.id}, observed ${event.occurredAt}): ${event.payload?.text ?? JSON.stringify(event.payload)}`).join('\n')}`,

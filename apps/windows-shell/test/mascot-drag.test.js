@@ -66,3 +66,17 @@ test("pending movement survives IPC delay; another pointer cannot cancel the dra
   assert.equal(f.sent.at(-1).dragging, false);
   assert.equal(f.sent.at(-1).x, 120, "cancellation retains last valid coordinates");
 });
+
+test("the cat's menu opens in mascot mode, never during a drag or in developer mode", async () => {
+  const { catMenuAllowed } = await import("../renderer/mascot-drag.js");
+  assert.equal(catMenuAllowed({ mascotMode: true, dragging: false }), true);
+  assert.equal(catMenuAllowed({ mascotMode: true, dragging: true }), false);
+  assert.equal(catMenuAllowed({ mascotMode: false, dragging: false }), false);
+});
+
+test("a right press never starts a drag", async () => {
+  const f = fixture();
+  await f.drag.begin(pointer(10, 20, { button: 2 }));
+  assert.equal(f.reads(), 0);
+  assert.deepEqual(f.states, []);
+});

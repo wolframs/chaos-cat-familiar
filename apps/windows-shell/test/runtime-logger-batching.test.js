@@ -90,3 +90,28 @@ test("disk failures never escape, buffers stay bounded, and explicit retry recov
   assert.equal(logger.status().lastWriteError, null);
   assert.match(fs.readFileSync(filePath, "utf8"), /line-499/);
 });
+
+// Process-split plan, step 6: in the core the storage worker appends the lines; this thread only batches them.
+test("with a sink, batches go to it in order and nothing touches a file here; drain waits; a failed batch is counted", async () => {
+  const appended = [];
+  let fail = false;
+  const timers = { setTimeout: () => ({ unref() {} }), clearTimeout() {} };
+  const logger = new RuntimeLogger({ filePath: "C:/nowhere/ccf.log", stdout() {}, stderr() {}, flushDelayMs: 250, timers,
+    sink: { append: async (text) => { await new Promise((resolve) => setTimeout(resolve, 5)); if (fail) throw new Error("disk gone"); appended.push(text); } } });
+  logger.info("a", "first");
+  logger.info("a", "second");
+  assert.deepEqual(appended, [], "info lines wait for the batch");
+  logger.warn("a", "third");   // urgent: the batch leaves now
+  assert.equal(await logger.drain(), true);
+  assert.equal(appended.length, 1);
+  assert.match(appended[0], /first[\s\S]*second[\s\S]*third/);
+  fail = true;
+  logger.error("a", "lost");
+  assert.equal(await logger.drain(), false);
+  assert.equal(logger.status().droppedLines, 1);
+  assert.equal(logger.status().writer, "storage-worker");
+  fail = false;
+  logger.info("a", "after");
+  assert.equal(await logger.closeAsync(), true);
+  assert.match(appended.at(-1), /after/);
+});

@@ -26,7 +26,7 @@ export async function createStdioTransport({executable,args=[],cwd,env=process.e
     try { await Promise.race([closed,new Promise((_,reject)=>{timer=setTimeout(()=>reject(new Error('Companion process did not stop')),10000);})]); }
     finally {clearTimeout(timer);}
   })();
-  return {readable:child.stdout,writable:child.stdin,stderr:child.stderr,closed,stop,
+  return {pid:child.pid,readable:child.stdout,writable:child.stdin,stderr:child.stderr,closed,stop,
     getDiagnostics(){
       let safe=stderr.replace(/Bearer\s+\S+|sk-[A-Za-z0-9_-]{12,}/g,'[redacted]');
       for(const[key,value]of Object.entries(env))if(/TOKEN|SECRET|PASSWORD|KEY/i.test(key)&&value?.length>=8)safe=safe.split(value).join('[redacted]');

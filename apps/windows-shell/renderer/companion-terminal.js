@@ -1,3 +1,5 @@
+import { cells, cleanTerminalCopy, findTextLinks } from "./terminal-text.js";
+
 // Accept only serialized colour values from the screen model, never arbitrary
 // CSS or terminal-supplied HTML. textContent also keeps OSC/URL text inert.
 function safeColour(value) {
@@ -66,6 +68,44 @@ const RUN_FIELDS = ["text", "columns", "foreground", "background", "bold", "dim"
 const LINK = /^(https?|file):\/\//i;
 
 function validRun(run) { return run && typeof run.text === "string"; }
+function hasLink(run) { return typeof run.link === "string" && LINK.test(run.link); }
+
+function splitRun(run, text, link) {
+  const columns = run.columns === run.text.length ? text.length : cells(text);
+  return { ...run, text, columns, link };
+}
+
+function linkRuns(runs, ranges) {
+  const linked = [];
+  let offset = 0;
+  for (const run of runs) {
+    if (!validRun(run)) continue;
+    const runStart = offset;
+    offset += run.text.length;
+    if (hasLink(run)) { linked.push(run); continue; }
+    let cursor = runStart;
+    for (const range of ranges) {
+      const start = Math.max(range.start, cursor);
+      const end = Math.min(range.end, offset);
+      if (start >= end) continue;
+      if (start > cursor) linked.push(splitRun(run, run.text.slice(cursor - runStart, start - runStart), run.link ?? null));
+      linked.push(splitRun(run, run.text.slice(start - runStart, end - runStart), range.url));
+      cursor = end;
+    }
+    if (cursor === runStart) linked.push(run);
+    else if (cursor < offset) linked.push(splitRun(run, run.text.slice(cursor - runStart), run.link ?? null));
+  }
+  return linked;
+}
+
+// Plain-text http(s) and file URLs become links like OSC 8 ones (same span, same click path through main's
+// openLink and its file allow-list), across Claude's own line wraps too; OSC 8 runs keep their own target.
+export function linkPlainUrls(lines, { columns } = {}) {
+  if (!Array.isArray(lines)) return lines;
+  const found = findTextLinks(lines.map(rowText), { columns });
+  if (found.size === 0) return lines;
+  return lines.map((runs, row) => found.has(row) && Array.isArray(runs) ? linkRuns(runs, found.get(row)) : runs);
+}
 
 function rowKey(runs) {
   let hash = 2166136261;
@@ -123,11 +163,12 @@ function createRow(document, runs) {
 
 // Full snapshots from older backends remain supported. Retain unchanged rows,
 // including shifted scrollback, so a spinner repaint never rebuilds its history.
-export function renderCompanionTerminal(element, terminalSnapshot) {
+// options.columns: the pane's width in cells (the PTY's), for finding URLs cut by a wrap.
+export function renderCompanionTerminal(element, terminalSnapshot, options = {}) {
   const document = element.ownerDocument;
   const current = Array.isArray(terminalSnapshot?.lines) ? terminalSnapshot.lines : [];
   const history = Array.isArray(terminalSnapshot?.history) ? terminalSnapshot.history : [];
-  const lines = [...history, ...current];
+  const lines = linkPlainUrls([...history, ...current], options);
   const prior = renderedScreens.get(element);
   if (lines.length === 0) {
     const content = typeof terminalSnapshot?.screen === "string" ? terminalSnapshot.screen : "";
@@ -187,4 +228,44 @@ export function renderCompanionTerminal(element, terminalSnapshot) {
   }
   renderedScreens.set(element, { rows });
   return changed;
+}
+
+// A DOM selection point as { row, column } in the rendered rows (column: offset in the row's text), or null
+// outside them. Each row node holds a separator span, then one span per run, each with a single text node.
+function selectionPoint(element, rows, node, offset) {
+  if (node === element) {
+    if (offset < rows.length) return { row: offset, column: 0 };
+    return rows.length ? { row: rows.length - 1, column: rowText(rows.at(-1).runs).length } : null;
+  }
+  let rowNode = node;
+  let child = null;
+  while (rowNode && rowNode.parentNode !== element) { child = rowNode; rowNode = rowNode.parentNode; }
+  const row = rowNode ? rows.findIndex((candidate) => candidate.node === rowNode) : -1;
+  if (row < 0) return null;
+  const spans = [...rowNode.children];
+  const index = child ? spans.indexOf(child) : offset;
+  let column = 0;
+  for (const span of spans.slice(1, Math.max(1, index))) column += span.textContent.length;
+  if (child && index > 0) column += node === child ? (offset > 0 ? child.textContent.length : 0) : offset;
+  return { row, column };
+}
+
+// The selection's text for the clipboard (see cleanTerminalCopy), or null when the selection is not
+// within the rendered rows and the browser's own copy should stand.
+export function terminalSelectionText(element, selection, { columns } = {}) {
+  const rows = renderedScreens.get(element)?.rows;
+  if (!rows?.length || !selection || selection.isCollapsed || !selection.rangeCount) return null;
+  const range = selection.getRangeAt(0);
+  const start = selectionPoint(element, rows, range.startContainer, range.startOffset);
+  const end = selectionPoint(element, rows, range.endContainer, range.endOffset);
+  if (!start || !end || end.row < start.row) return null;
+  const texts = rows.map((row) => rowText(row.runs));
+  const picked = [];
+  for (let row = start.row; row <= end.row; row++) {
+    picked.push({ text: texts[row], start: row === start.row ? start.column : 0,
+      end: row === end.row ? end.column : texts[row].length });
+  }
+  // A selection dragged to the start of the next row ends there, not in it.
+  if (picked.length > 1 && picked.at(-1).end === 0) picked.pop();
+  return cleanTerminalCopy(picked, { columns, context: texts });
 }

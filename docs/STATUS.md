@@ -1,9 +1,49 @@
 # Status
 
-As of 2026-11-02. Dev-run only: no installer, no packaged build has been tested.
+As of 2026-11-20. Dev runs; a packaged Electron build passes the smoke run in test mode; no installer tested.
 
 ## Where it stands
 
+- Conversation pane links and copy: plain-text http(s) and `file://` URLs in Claude's terminal are links now, like
+  OSC 8 ones (same click path, same file allow-list), also when Claude's wrap cut a URL across several rows; sentence
+  punctuation and unbalanced brackets stay outside, `[text](url)` links the url, and links show a dotted underline.
+  Copying from the pane (Ctrl+C, Ctrl+Insert) drops the row padding, joins the rows Claude's own wrapping split and
+  keeps real breaks (list items, blank lines, code, tables, tool results). Both are heuristics over the screen text
+  (`renderer/terminal-text.js`, rules at its top). Unit tests use rows captured from a live session.
+- Session tracking: cache-warm pings (prompts starting with `[Cache warm maintenance]`) no longer raise "Waiting" or
+  "Finished" toasts; Claude sessions that died without `SessionEnd` end once they are gone from Claude Code's session
+  registry and quiet for 2 min (a reused pid is told apart by its process start time); a side-panel row click raises
+  the session's terminal window and says so, and never opens a new terminal; a hosted companion idling without its
+  watcher raises a toast. Unit and runtime tests and the isolated smoke run.
+- Side panel and cluster menu: a panel left of the companion's conversation shows what a companion writes to
+  `state/panel.json` (sections of one-line rows, headings with indented child rows, a done button on idle session
+  rows): a click opens the link, focuses the session's terminal or copies the id; it dims and says so when the file
+  is old, missing or unreadable. Right-click on the cat opens the tray's menu (Show Companion, Always on Top, Side
+  Panel, Minimize to Tray). Always on Top off lets other windows cover the whole cluster, and a cat click brings it
+  back up. Minimize to Tray hides the cluster with its panel and bubbles; while hidden, approvals no longer bring the
+  cat back (the tray tooltip counts them, toasts still fire). File links open only folders and listed document
+  types. How it works: ARCHITECTURE, "The side panel and the cluster menu". Unit, runtime and smoke tests; in daily
+  use.
+- Cat states: the cat shows Thinking while the model generates and Working while a tool runs (long busy stretches
+  alternate between the two), and a lost `SubagentStop` no longer keeps it out of idle.
+- Process split (finished 2026-11-06): CCF runs as three processes. The core (hook server, approvals, settings, log,
+  state) runs in an Electron utility process and restarts on its port after a crash; the companion backend (Claude's
+  PTY, Codex, watcher, delivery records) runs in a second one, started when the companion is first used, and its
+  children end with it (kill-on-close job). The windows' process holds no stores and does no synchronous file work, and
+  a test checks every module it loads. State reaches each window as versioned deltas on a port of its own; terminal
+  frames go from the companion straight to the conversation window. Load fixture: main's event loop p99 28 ms instead
+  of 74. A packaged build (`prepare-app -RunPackager`) starts and passes the smoke run in test mode.
+- Persistence: the core keeps its history and the companion's delivery records in `ccf.sqlite` (SQLite in a worker
+  thread of the core, changed rows committed after a 100 ms batching delay) instead of a ~1 MB `state.json`; settings
+  writes, the log and the run marker moved to that worker too. The first start imports the old JSON files once and
+  keeps them; `node scripts/windows/storage-export.mjs --to-json` is the way back to an older build. Tested with
+  unit, real-process (killed mid-commit and mid-send) and smoke runs.
+- Hook-event hangs: each hook event used to read `settings.json` once per retained session and send the full state
+  to the overlay twice, which froze the cat's window for up to 1.3 s on a laptop with an endpoint scanner. Settings
+  now come from memory (a stat once a second sees outside edits) and the state goes out once.
+- Hook relay: with CCF closed, Claude Code showed a "hook error / ECONNREFUSED" line per http hook event in every
+  session. The routine hooks can now go through `ccf-hook-relay` (`apps/hook-relay`, Go, setting `hookRelayPort`),
+  which starts at logon, answers at once and drops events silently while CCF is closed.
 - Cat speech bubbles: the work companion's watcher can post `POST /companion/bubble`, and the
   cat says it in a bubble above its head. A request carries free text, or an event name with
   placeholders; CCF then picks the line from its catalog (`assets/cat-lines.json`) by rarity

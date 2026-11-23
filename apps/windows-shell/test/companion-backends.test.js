@@ -5,7 +5,14 @@ import os from 'node:os';
 import path from 'node:path';
 import { EventEmitter } from 'node:events';
 import { CompanionBackends } from '../services/companion-backends.js';
-import { CompanionDeliveryStore } from '../../../packages/core/src/companion-delivery.js';
+import { CompanionDeliveryStore, MemoryDeliveryRepository } from '../../../packages/core/src/companion-delivery.js';
+
+// Delivery records are durable through an asynchronous repository since process-split step 6 (the core's SQLite).
+async function openDeliveryStore() {
+  const store = new CompanionDeliveryStore({ repository: new MemoryDeliveryRepository() });
+  await store.open();
+  return store;
+}
 
 function switchFixture({onSelect}={}){
   const calls=[],state={connected:true,phase:'idle',conversationId:'codex-day',pendingRequests:[]};
@@ -82,7 +89,7 @@ test('backend publication uses the captured adapter snapshot without rereading a
 
 test('backend selection cannot replace a running session; accepted IPC result follows durable commit', async t => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'ccf-backends-'));
-  const store = new CompanionDeliveryStore({filePath:path.join(root,'delivery.json')});
+  const store = await openDeliveryStore();
   const claude = new EventEmitter();
   claude.getSnapshot = () => ({connected:false,phase:'offline',messages:[]}); claude.stop = async () => {};
   const codex = new EventEmitter();
@@ -99,10 +106,12 @@ test('backend selection cannot replace a running session; accepted IPC result fo
   await backends.start({userInitiated:true});
   assert.throws(() => backends.selectBackend('claude'), /disconnect/i);
   const result = backends.submit({id:'input-a',text:'synthetic',draftRevision:1});
-  assert.equal(store.snapshot().submissions[0].state,'pending');
+  while (!accept) await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(store.snapshot().submissions[0].state,'pending', 'transmitted only after the pending record was committed');
+  assert.equal(store.repository.state().submissions[0].state,'pending');
   accept({state:'accepted',turnId:'turn-a'});
   assert.equal((await result).state,'accepted');
-  assert.equal(JSON.parse(fs.readFileSync(store.filePath)).submissions[0].state,'accepted');
+  assert.equal(store.repository.state().submissions[0].state,'accepted');
 });
 
 test('Claude PTY compatibility awaits writes and reports its weaker acceptance boundary', async t => {
@@ -116,7 +125,7 @@ test('Claude PTY compatibility awaits writes and reports its weaker acceptance b
 });
 
 test('daily ownership precedes Codex launch; accepted memory is checkpointed and watcher stops first',async t=>{
-  const root=fs.mkdtempSync(path.join(os.tmpdir(),'ccf-owner-'));const delivery=new CompanionDeliveryStore({filePath:path.join(root,'delivery.json')});
+  const root=fs.mkdtempSync(path.join(os.tmpdir(),'ccf-owner-'));const delivery=await openDeliveryStore();
   const order=[];let connected=false;const codex=new EventEmitter();
   codex.getSnapshot=()=>({backend:'codex',connected,phase:connected?'idle':'offline',conversationId:connected?'thread-a':null,connectionEpoch:1});
   codex.start=async options=>{order.push('backend-start');assert.equal(options.developerInstructions,'synthetic core');connected=true;return{memoryAck:{revision:'ctx-a',threadId:'thread-a',acceptanceId:'thread-a',boundary:'thread-accepted'}};};
@@ -131,7 +140,7 @@ test('daily ownership precedes Codex launch; accepted memory is checkpointed and
 
 test('empty turn memory has no pending bridge context to reject or acknowledge and user submission proceeds durably',async t=>{
   const root=fs.mkdtempSync(path.join(os.tmpdir(),'ccf-no-memory-'));
-  const delivery=new CompanionDeliveryStore({filePath:path.join(root,'delivery.json')});
+  const delivery=await openDeliveryStore();
   t.after(()=>{delivery.close();fs.rmSync(root,{recursive:true,force:true});});
   const codex=new EventEmitter();codex.stop=async()=>{};
   codex.getSnapshot=()=>({backend:'codex',connected:true,phase:'idle',conversationId:'existing-thread',connectionEpoch:1});
@@ -147,11 +156,25 @@ test('empty turn memory has no pending bridge context to reject or acknowledge a
 });
 
 test('Claude sends before hooks supply identity and keeps PTY acceptance semantics',async t=>{
-  const root=fs.mkdtempSync(path.join(os.tmpdir(),'ccf-claude-ledger-'));const delivery=new CompanionDeliveryStore({filePath:path.join(root,'delivery.json')});
+  const root=fs.mkdtempSync(path.join(os.tmpdir(),'ccf-claude-ledger-'));const delivery=await openDeliveryStore();
   const claude=new EventEmitter();claude.getSnapshot=()=>({connected:true,phase:'idle'});claude.stop=async()=>{};let sent=[];claude.send=async text=>{sent.push(text);};
   const backends=new CompanionBackends({claude,codex:claude,delivery});t.after(()=>{delivery.close();fs.rmSync(root,{recursive:true,force:true});});
   assert.equal((await backends.submit({id:'before-id',text:'hello'})).state,'accepted');
-  backends.observeConversation({backend:'claude',conversationId:'claude-real-id'});
+  await backends.observeConversation({backend:'claude',conversationId:'claude-real-id'});
   const result=await backends.submit({id:'after-id',text:'world'});assert.equal(result.state,'accepted');assert.equal(result.acceptanceBoundary,'pty-write');
   assert.deepEqual(sent,['hello','world']);assert.deepEqual(delivery.snapshot().submissions,[]);
+});
+
+// Process-split plan, step 6: while the delivery records are unavailable the hook-driven identity observation skips
+// quietly (the snapshot already says so); it ran per hook event and would otherwise warn every time.
+test('a blocked delivery store skips identity observations instead of failing each hook event', async () => {
+  const repository = new MemoryDeliveryRepository();
+  const delivery = new CompanionDeliveryStore({ repository });
+  await delivery.open();
+  const claude = new EventEmitter(); claude.getSnapshot = () => ({ connected: true, phase: 'idle' }); claude.stop = async () => {};
+  const backends = new CompanionBackends({ claude, codex: claude, delivery });
+  repository.fail = () => Object.assign(new Error('core restarting'), { code: 'storage_unavailable' });
+  await assert.rejects(delivery.rememberConversation({ backend: 'claude', conversationId: 'c-1', generation: backends.generation }), /blocked/);
+  assert.equal(await backends.observeConversation({ backend: 'claude', conversationId: 'c-2' }), false);
+  assert.match(backends.getSnapshot().error, /Conversation records are unavailable/);
 });

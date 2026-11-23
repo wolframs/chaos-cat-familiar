@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { placeCompanionCluster } from "../services/companion-cluster-layout.js";
+import { PANEL, placeCompanionCluster } from "../services/companion-cluster-layout.js";
 
 test("the cat sits at the left of a shared footer row with status alongside", () => {
   const layout = placeCompanionCluster({
@@ -50,4 +50,35 @@ test("a larger saved cat window still keeps the footer within the conversation w
   assert.equal(layout.cat.width, 168);
   assert.equal(layout.cat.height, 144);
   assert.equal(layout.status.width, 508);
+});
+
+test("the side panel sits left of the conversation with the same top and height", () => {
+  const layout = placeCompanionCluster({ cat: { x: 900, y: 600, width: 168, height: 144 },
+    workArea: { x: 0, y: 0, width: 1920, height: 1080 }, panel: PANEL });
+  assert.equal(PANEL.width, 320);
+  assert.deepEqual(layout.panel, { x: layout.conversation.x - 320, y: layout.conversation.y, width: 320,
+    height: layout.conversation.height });
+  assert.equal(layout.panel.x + layout.panel.width, layout.conversation.x);
+  const without = placeCompanionCluster({ cat: { x: 900, y: 600, width: 168, height: 144 },
+    workArea: { x: 0, y: 0, width: 1920, height: 1080 } });
+  assert.equal(Object.hasOwn(without, "panel"), false, "no panel asked, no panel key");
+  assert.deepEqual({ ...layout, panel: undefined }, { ...without, panel: undefined });
+});
+
+test("at the screen's left edge the cat is clamped right by the panel's width", () => {
+  const area = { x: 1920, y: 0, width: 1920, height: 1040 };
+  const layout = placeCompanionCluster({ cat: { x: 1900, y: 600, width: 168, height: 144 }, workArea: area, panel: PANEL });
+  const without = placeCompanionCluster({ cat: { x: 1900, y: 600, width: 168, height: 144 }, workArea: area });
+  assert.equal(without.cat.x, area.x + 8);
+  assert.equal(layout.cat.x, area.x + 8 + 320);
+  assert.equal(layout.panel.x, area.x + 8);
+});
+
+test("a work area narrower than conversation + panel + 16 has no panel", () => {
+  const area = { x: 0, y: 0, width: 1035, height: 900 };
+  const layout = placeCompanionCluster({ cat: { x: 0, y: 600, width: 168, height: 144 }, workArea: area, panel: PANEL });
+  assert.equal(layout.panel, null);
+  assert.equal(layout.cat.x, 8, "laid out as without the panel");
+  assert.ok(placeCompanionCluster({ cat: { x: 0, y: 600, width: 168, height: 144 },
+    workArea: { ...area, width: 1036 }, panel: PANEL }).panel);
 });

@@ -1,0 +1,42 @@
+{
+  "name": "companion identity: hooks from the work-companion folder tell the session who it is, how it looks and what it said",
+  "companion": { "backend": "claude", "connected": true },
+  "steps": [
+    { "do": "hook", "body": { "hook_event_name": "SessionStart", "session_id": "s-comp", "cwd": "$COMPANION" } },
+    { "do": "calls", "expect": [
+      { "method": "observeConversation", "args": [ { "backend": "claude", "conversationId": "s-comp" } ] },
+      { "method": "updatePresentation", "args": [ { "phase": "idle", "pendingPrompt": null } ] } ] },
+    { "do": "hook", "body": { "hook_event_name": "SessionStart", "session_id": "s-other", "cwd": "$OTHER" } },
+    { "do": "calls", "expect": [] },
+    { "do": "hook", "body": { "hook_event_name": "UserPromptSubmit", "session_id": "s-comp", "cwd": "$COMPANION", "prompt": "hello" } },
+    { "do": "calls", "expect": [
+      { "method": "observeConversation", "args": [ { "backend": "claude", "conversationId": "s-comp" } ] },
+      { "method": "updatePresentation", "args": [ { "phase": "working", "pendingPrompt": null } ] } ] },
+    { "do": "permission", "as": "bash", "waitApprovals": 1,
+      "body": { "hook_event_name": "PermissionRequest", "session_id": "s-comp", "cwd": "$COMPANION", "tool_name": "Bash", "tool_input": { "command": "ls" } } },
+    { "do": "calls", "expect": [
+      { "method": "observeConversation", "args": [ { "backend": "claude", "conversationId": "s-comp" } ] },
+      { "method": "updatePresentation", "args": [ { "phase": "attention", "pendingPrompt": { "kind": "approval", "label": "Bash needs approval" } } ] } ] },
+    { "do": "ipc", "channel": "ccf:approval-action", "args": [ { "id": "$APPROVAL0", "action": "allow" } ], "expect": { "approvals": [] } },
+    { "do": "response", "of": "bash", "expect": { "status": 200, "body": { "hookSpecificOutput": { "decision": { "behavior": "allow" } } } } },
+    { "do": "calls", "expect": [] },
+    { "do": "hook", "body": { "hook_event_name": "Stop", "session_id": "s-comp", "cwd": "$COMPANION", "last_assistant_message": "All done." } },
+    { "do": "calls", "expect": [
+      { "method": "observeConversation", "args": [ { "backend": "claude", "conversationId": "s-comp" } ] },
+      { "method": "recordAssistantMessage", "args": [ "All done.", {} ] },
+      { "method": "updatePresentation", "args": [ { "phase": "idle", "pendingPrompt": null } ] } ] },
+    { "do": "hook", "body": { "hook_event_name": "Stop", "session_id": "s-other", "cwd": "$OTHER", "last_assistant_message": "Not mine." } },
+    { "do": "calls", "expect": [] },
+
+    { "do": "companionChange", "snapshot": { "connected": false, "phase": "offline" } },
+    { "do": "hook", "body": { "hook_event_name": "UserPromptSubmit", "session_id": "s-comp", "cwd": "$COMPANION", "prompt": "again" } },
+    { "do": "calls", "expect": [ { "method": "observeConversation", "args": [ { "backend": "claude", "conversationId": "s-comp" } ] } ] },
+
+    { "do": "companionChange", "snapshot": { "backend": "codex", "connected": true, "phase": "working", "conversationId": "thread-1" } },
+    { "do": "state", "expect": { "sessions": [ { "id": "[\"codex\",\"thread-1\"]", "status": "active", "phase": "running" }, { "id": "s-other" }, { "id": "s-comp" } ] } },
+    { "do": "hook", "body": { "hook_event_name": "Stop", "session_id": "s-comp", "cwd": "$COMPANION", "last_assistant_message": "Claude while Codex runs." } },
+    { "do": "calls", "expect": [
+      { "method": "recordAssistantMessage", "args": [ "Claude while Codex runs.", {} ] },
+      { "method": "updatePresentation", "args": [ { "phase": "idle", "pendingPrompt": null } ] } ] }
+  ]
+}

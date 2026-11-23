@@ -1,4 +1,4 @@
-import fs from "node:fs";
+import fs from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { defaultMascotConfig } from "../renderer/default-mascot-config.js";
@@ -38,13 +38,11 @@ function resolveBundledAssets(config) {
   return config;
 }
 
-function readBundledConfig(slug) {
+// Read without blocking: main loads the library (process-split plan, step 7).
+async function readBundledConfig(slug) {
   const filePath = path.join(defaultsDir, `${slug}.json`);
   try {
-    if (!fs.existsSync(filePath)) {
-      return null;
-    }
-    const raw = fs.readFileSync(filePath, "utf8");
+    const raw = await fs.readFile(filePath, "utf8");
     const parsed = JSON.parse(raw.replace(/,\s*([}\]])/g, "$1"));
     if (!parsed || typeof parsed !== "object" || !Array.isArray(parsed.nodes) || !Array.isArray(parsed.edges)) {
       return null;
@@ -55,9 +53,10 @@ function readBundledConfig(slug) {
   }
 }
 
-export function loadBundledMascots() {
-  const mascots = bundledPresetSlugs.map((slug) => {
-    const config = readBundledConfig(slug);
+export async function loadBundledMascots() {
+  const configs = await Promise.all(bundledPresetSlugs.map((slug) => readBundledConfig(slug)));
+  const mascots = bundledPresetSlugs.map((slug, index) => {
+    const config = configs[index];
     if (!config) {
       return null;
     }

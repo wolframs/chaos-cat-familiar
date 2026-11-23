@@ -1,31 +1,41 @@
-import fs from "node:fs";
+import fs from "node:fs/promises";
 import path from "node:path";
 import { removeCcfHookRegistrations } from "./claude-hook-cleanup.js";
 
-function removePath(targetPath) {
-  if (!targetPath || !fs.existsSync(targetPath)) {
+// The dashboard's cleanup actions (main) and hook removal (the core). Asynchronous: neither process's event loop waits on
+// the disk or the virus scanner (process-split plan, step 7).
+
+async function exists(targetPath) {
+  try { await fs.access(targetPath); return true; } catch { return false; }
+}
+
+async function removePath(targetPath) {
+  if (!targetPath || !(await exists(targetPath))) {
     return false;
   }
-  fs.rmSync(targetPath, { recursive: true, force: true });
+  await fs.rm(targetPath, { recursive: true, force: true });
   return true;
 }
 
-export function removeCcfClaudeHooks({ home, appRootName = ".chaos-cat-familiar" }) {
+export async function removeCcfClaudeHooks({ home, appRootName = ".chaos-cat-familiar" }) {
   const claudeSettingsPath = path.join(home, ".claude", "settings.json");
   const hookPath = path.join(home, appRootName, "hooks", "hook-sender.ps1");
   let changed = false;
   let removedEvents = [];
 
-  if (fs.existsSync(claudeSettingsPath)) {
-    const raw = fs.readFileSync(claudeSettingsPath, "utf8");
+  const raw = await fs.readFile(claudeSettingsPath, "utf8").catch((error) => {
+    if (error.code === "ENOENT") return null;
+    throw error;
+  });
+  if (raw !== null) {
     const parsed = raw ? JSON.parse(raw) : {};
     const result = removeCcfHookRegistrations(parsed, hookPath);
     changed = result.changed;
     removedEvents = result.removedEvents;
-    fs.writeFileSync(claudeSettingsPath, JSON.stringify(result.updated, null, 2));
+    await fs.writeFile(claudeSettingsPath, JSON.stringify(result.updated, null, 2));
   }
 
-  const removedHookScript = removePath(hookPath);
+  const removedHookScript = await removePath(hookPath);
   return {
     ok: true,
     changed,
@@ -34,28 +44,28 @@ export function removeCcfClaudeHooks({ home, appRootName = ".chaos-cat-familiar"
   };
 }
 
-export function clearCcfLocalData({ appDataRoot, homeRoot, preserveHooks = true }) {
+export async function clearCcfLocalData({ appDataRoot, homeRoot, preserveHooks = true }) {
   const removed = [];
-  if (appDataRoot && fs.existsSync(appDataRoot)) {
+  if (appDataRoot && await exists(appDataRoot)) {
     for (const name of ["state.json", "mascots.json"]) {
       const target = path.join(appDataRoot, name);
-      if (removePath(target)) {
+      if (await removePath(target)) {
         removed.push(target);
       }
     }
   }
-  if (homeRoot && fs.existsSync(homeRoot)) {
+  if (homeRoot && await exists(homeRoot)) {
     if (preserveHooks) {
-      const entries = fs.readdirSync(homeRoot, { withFileTypes: true });
+      const entries = await fs.readdir(homeRoot, { withFileTypes: true });
       for (const entry of entries) {
         if (entry.name === "hooks") {
           continue;
         }
         const target = path.join(homeRoot, entry.name);
-        removePath(target);
+        await removePath(target);
         removed.push(target);
       }
-    } else if (removePath(homeRoot)) {
+    } else if (await removePath(homeRoot)) {
       removed.push(homeRoot);
     }
   }
@@ -65,11 +75,11 @@ export function clearCcfLocalData({ appDataRoot, homeRoot, preserveHooks = true 
   };
 }
 
-export function clearCcfCacheAndLogs({ appDataRoot }) {
+export async function clearCcfCacheAndLogs({ appDataRoot }) {
   const removed = [];
   for (const name of ["logs", "mascot-assets", "runtime.json"]) {
     const target = path.join(appDataRoot, name);
-    if (removePath(target)) {
+    if (await removePath(target)) {
       removed.push(target);
     }
   }

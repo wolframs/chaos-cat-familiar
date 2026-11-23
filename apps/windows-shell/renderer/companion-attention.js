@@ -10,14 +10,22 @@ export function companionAttention(state = {}) {
   const candidateToast = state.ui?.overlay?.toast;
   const toast = candidateToast?.visibleUntil <= Date.now() ? null : candidateToast;
   const active = sessions.filter((item) => item.status === "active");
-  const working = active.find((item) => mascotInputsFromState({ sessions: [item] })["agent::isWorking"] || item.isCompacting || item.phase === "compacting");
+  const busy = (item) => {
+    const inputs = mascotInputsFromState({ sessions: [item] });
+    return inputs["agent::isWorking"] || inputs["agent::isCompacting"];
+  };
+  const working = active.find(busy);
   const session = approval
     ? sessions.find((item) => item.id === approval.event?.sessionId)
     : working ?? sessions.find((item) => item.id === toast?.sessionId) ?? active[0];
   const identity = sessionIdentity(session ?? (approval ? { id: approval.event?.sessionId ?? "unknown", projectDir: approval.event?.cwd } : null));
   if(state.hostedCompanion?.pendingRequestCount>0)return{kind:'waiting',label:'Waiting for you',summary:'Codex has a request in the conversation',session:sessions.find(s=>s.id===state.hostedCompanion.sessionId),identity:'Codex work companion'};
   if (approval) return { kind: "waiting", label: "Waiting for you", summary: `${approval.event?.toolName ?? "Request"} needs approval`, session, approval, identity };
-  if (working) return { kind: "working", label: "Working", summary: working.isCompacting ? "Compacting context" : "Working", session, identity };
+  if (working) {
+    const summary = working.isCompacting ? "Compacting context"
+      : mascotInputsFromState(state)["agent::isThinking"] ? "Thinking" : "Working";
+    return { kind: "working", label: "Working", summary, session, identity };
+  }
   if (toast) return { kind: "finished", label: "Finished", summary: toast.completedCount > 1 ? `${toast.completedCount} sessions finished` : "Finished", session, identity };
   return { kind: "idle", label: "Idle", summary: "Idle", session, identity };
 }

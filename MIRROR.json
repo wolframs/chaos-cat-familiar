@@ -2,15 +2,15 @@
   "excluded_files": 18,
   "file_counts": {
     "add": 3,
-    "copy": 305,
+    "copy": 402,
     "override": 6,
-    "redact": 4
+    "redact": 12
   },
   "manifest_name": "chaos-cat-familiar",
   "manifest_sha256": "ecf20cbbf37eaf0e7c519adbd46b72665fcccf24a17f45f46a5c4090561bfca4",
   "open_reviews": 0,
-  "source_commit": "d899a7c16183ede11b95e4266fc3f6c88dab0abf",
-  "staged_files": 318,
+  "source_commit": "8fea32143f880a9779aa04d979659aca5e1df425",
+  "staged_files": 423,
   "tool_version": "1",
   "unclassified_files": 0,
   "updates": [
@@ -39,6 +39,13 @@
       "how": "Manual port of 97ca49745e30..d899a7c1 (69 commits): hosted Codex companion and Codex hook observation, cat speech bubbles with the line catalog, http hooks for routine Claude events, themed tray panes with window controls, developer overlay and approval banner fixes. README and docs/STATUS.md edited in place; AGENTS.md, mascot preview and the companion-session test patched as trimmed copies; codex-companion plan and review notes excluded.",
       "changed_files": 108,
       "validation": "Full public snapshot test suite (426 tests) passed."
+    },
+    {
+      "date": "2026-11-23",
+      "source_commit": "8fea32143f880a9779aa04d979659aca5e1df425",
+      "how": "Manual port of d899a7c1..8fea3214 (115 commits): process split (core and companion in utility processes, state to windows as deltas on ports, SQLite storage worker, packaged build), hook relay (apps/hook-relay), side panel and shared cluster menu, conversation-pane links and clean copy, session tracking fixes, cat Thinking/Working states. AGENTS.md, docs/STATUS.md, docs/DEBUGGING.md and the companion-session/platform-services tests edited in place as trimmed copies; work-specific URLs, repo and sensor names replaced by neutral examples in companion-terminal, terminal-text, companion-panel-model, runtime-side-panel, claude-session-status and session-tracking tests and in scripts/windows/side-panel-smoke.mjs; links to the unpublished process-split plan and a private report removed from docs/ARCHITECTURE.md; the plan itself excluded.",
+      "changed_files": 198,
+      "validation": "Full public snapshot test suite (714 tests, node --test over core, windows-shell and scripts) passed in the mirror clone against the source dependencies."
     }
   ]
 }

@@ -1,11 +1,11 @@
-import fs from "node:fs";
+import fs from "node:fs/promises";
 import path from "node:path";
 import { defaultMascotConfig } from "../renderer/default-mascot-config.js";
 import { MascotAssetCache } from "./mascot-asset-cache.js";
 import { loadBundledMascots } from "./bundled-mascots.js";
 
-function createDefaultRecord() {
-  const bundledMascots = loadBundledMascots();
+async function createDefaultRecord() {
+  const bundledMascots = await loadBundledMascots();
   const defaultMascotId = bundledMascots.find((item) => item.slug === "chaos-cat")?.id
     ?? bundledMascots.find((item) => item.slug === "masko")?.id
     ?? bundledMascots[0]?.id
@@ -31,6 +31,8 @@ function sanitizeSlug(slug) {
   return String(slug ?? "").trim().toLowerCase().replace(/[^a-z0-9-]/g, "");
 }
 
+// The mascots main shows (mascots.json and the bundled presets). Main owns it, so its file work is asynchronous: the
+// library loads on first use, and each change is written in order, newest last (process-split plan, step 7).
 export class MascotLibrary {
   constructor({ filePath, fetchImpl = globalThis.fetch, cacheDir, logger } = {}) {
     this.filePath = filePath;
@@ -41,28 +43,41 @@ export class MascotLibrary {
       fetchImpl,
       logger
     });
-    this.state = this.#loadState();
+    this.state = null;
+    this.loading = null;
+    this.writes = Promise.resolve();
     this.disposed = false;
   }
+
+  load() {
+    this.loading ??= this.#loadState().then((state) => { this.state = state; return this; });
+    return this.loading;
+  }
+
+  // Cache contents for diagnostics.
+  cacheStats() { return this.assetCache.stats(); }
 
   dispose() {
     this.disposed = true;
     this.assetCache.dispose();
   }
 
-  list() {
+  async list() {
+    await this.load();
     return {
       currentMascotId: this.state.currentMascotId,
       mascots: this.state.mascots.map((item) => this.#toPublicMascot(item))
     };
   }
 
-  current() {
+  async current() {
+    await this.load();
     const mascot = this.state.mascots.find((item) => item.id === this.state.currentMascotId) ?? this.state.mascots[0];
     return mascot ? this.#toPublicMascot(mascot) : null;
   }
 
-  select(id) {
+  async select(id) {
+    await this.load();
     const mascot = this.state.mascots.find((item) => item.id === id);
     if (!mascot) {
       return {
@@ -71,7 +86,7 @@ export class MascotLibrary {
       };
     }
     this.state.currentMascotId = mascot.id;
-    this.#persist();
+    await this.#persist();
     this.logger?.info("mascot", "Mascot selected", {
       mascotId: mascot.id,
       slug: mascot.slug ?? null
@@ -91,10 +106,11 @@ export class MascotLibrary {
       };
     }
 
+    await this.load();
     const existing = this.state.mascots.find((item) => item.slug === sanitizedSlug);
     if (existing) {
       this.state.currentMascotId = existing.id;
-      this.#persist();
+      await this.#persist();
       return {
         ok: true,
         mascot: this.#toPublicMascot(existing),
@@ -130,7 +146,7 @@ export class MascotLibrary {
     };
     this.state.mascots.unshift(mascot);
     this.state.currentMascotId = mascot.id;
-    this.#persist();
+    await this.#persist();
     this.logger?.info("mascot", "Mascot installed from slug", {
       slug: sanitizedSlug,
       mascotId: mascot.id
@@ -143,6 +159,7 @@ export class MascotLibrary {
   }
 
   async warmBundledAssets() {
+    await this.load();
     const bundled = this.state.mascots.find((item) => item.id === this.state.currentMascotId && item.source === "bundled")
       ?? this.state.mascots.find((item) => item.slug === "chaos-cat")
       ?? this.state.mascots.find((item) => item.source === "bundled");
@@ -152,11 +169,12 @@ export class MascotLibrary {
     const cachedConfig = await this.assetCache.cacheConfigAssets(bundled.config);
     if (this.disposed) return null;
     bundled.config = cachedConfig;
-    this.#persist();
+    await this.#persist();
     return this.#toPublicMascot(bundled);
   }
 
-  importConfig(config, options = {}) {
+  async importConfig(config, options = {}) {
+    await this.load();
     if (!config || typeof config !== "object") {
       return {
         ok: false,
@@ -174,7 +192,7 @@ export class MascotLibrary {
     };
     this.state.mascots.unshift(mascot);
     this.state.currentMascotId = mascot.id;
-    this.#persist();
+    await this.#persist();
     this.logger?.info("mascot", "Mascot imported from JSON", {
       mascotId: mascot.id,
       slug
@@ -186,7 +204,8 @@ export class MascotLibrary {
     };
   }
 
-  updateConfig(id, config) {
+  async updateConfig(id, config) {
+    await this.load();
     const mascot = this.state.mascots.find((item) => item.id === id);
     if (!mascot) {
       return {
@@ -195,7 +214,7 @@ export class MascotLibrary {
       };
     }
     mascot.config = config;
-    this.#persist();
+    await this.#persist();
     this.logger?.info("mascot", "Mascot config updated", {
       mascotId: mascot.id,
       slug: mascot.slug ?? null
@@ -207,7 +226,8 @@ export class MascotLibrary {
     };
   }
 
-  remove(id) {
+  async remove(id) {
+    await this.load();
     const mascot = this.state.mascots.find((item) => item.id === id);
     if (!mascot) {
       return {
@@ -225,7 +245,7 @@ export class MascotLibrary {
     if (this.state.currentMascotId === id) {
       this.state.currentMascotId = this.state.mascots[0]?.id ?? null;
     }
-    this.#persist();
+    await this.#persist();
     this.logger?.info("mascot", "Mascot removed", {
       mascotId: id,
       slug: mascot.slug ?? null
@@ -237,22 +257,24 @@ export class MascotLibrary {
     };
   }
 
-  #loadState() {
+  async #loadState() {
     if (!this.filePath) {
       return createDefaultRecord();
     }
     try {
-      if (fs.existsSync(this.filePath)) {
-        const parsed = JSON.parse(fs.readFileSync(this.filePath, "utf8"));
-        const normalized = this.#normalizeState(parsed);
+      const raw = await fs.readFile(this.filePath, "utf8").catch((error) => {
+        if (error.code === "ENOENT") return null;
+        throw error;
+      });
+      if (raw !== null) {
+        const parsed = JSON.parse(raw);
+        const normalized = await this.#normalizeState(parsed);
         if (parsed.version !== 2) {
-          try {
-            this.#writeState(normalized);
-          } catch (error) {
+          await this.#writeState(normalized).catch((error) => {
             this.logger?.warn("mascot", "Failed to persist mascot library migration", {
               error: String(error.message ?? error)
             });
-          }
+          });
         }
         return normalized;
       }
@@ -261,13 +283,15 @@ export class MascotLibrary {
         error: String(error.message ?? error)
       });
     }
-    const seeded = createDefaultRecord();
-    this.#writeState(seeded);
+    const seeded = await createDefaultRecord();
+    await this.#writeState(seeded).catch((error) => {
+      this.logger?.warn("mascot", "Failed to save the seeded mascot library", { error: String(error.message ?? error) });
+    });
     return seeded;
   }
 
-  #normalizeState(parsed) {
-    const base = createDefaultRecord();
+  async #normalizeState(parsed) {
+    const base = await createDefaultRecord();
     const mascots = Array.isArray(parsed?.mascots) && parsed.mascots.length > 0
       ? parsed.mascots.filter((item) => item?.id && item?.config)
       : base.mascots;
@@ -293,16 +317,25 @@ export class MascotLibrary {
     };
   }
 
+  // Resolves once this change is on disk; a failed write is logged, the library keeps the change in memory.
   #persist() {
-    this.#writeState(this.state);
+    return this.#writeState(this.state).catch((error) => {
+      this.logger?.warn("mascot", "Failed to save the mascot library", { error: String(error.message ?? error) });
+    });
   }
 
+  // Writes one after another; each takes the content of its moment, so the newest change lands last.
   #writeState(value) {
     if (!this.filePath) {
-      return;
+      return Promise.resolve();
     }
-    fs.mkdirSync(path.dirname(this.filePath), { recursive: true });
-    fs.writeFileSync(this.filePath, JSON.stringify(value, null, 2));
+    const text = JSON.stringify(value, null, 2);
+    const write = this.writes.then(async () => {
+      await fs.mkdir(path.dirname(this.filePath), { recursive: true });
+      await fs.writeFile(this.filePath, text);
+    });
+    this.writes = write.catch(() => {});
+    return write;
   }
 
   #toPublicMascot(mascot) {

@@ -1,0 +1,34 @@
+{
+  "name": "approvals: duplicates share one response; tool lifecycle, Stop and stopping the server release without a decision",
+  "steps": [
+    { "do": "hook", "body": { "hook_event_name": "PreToolUse", "session_id": "s-dup", "tool_name": "Bash", "tool_use_id": "tu-1", "tool_input": { "command": "make" } } },
+    { "do": "permission", "as": "first", "waitApprovals": 1,
+      "body": { "hook_event_name": "PermissionRequest", "session_id": "s-dup", "tool_name": "Bash", "tool_input": { "command": "make" } } },
+    { "do": "permission", "as": "second",
+      "body": { "hook_event_name": "PermissionRequest", "session_id": "s-dup", "tool_name": "Bash", "tool_input": { "command": "make" } } },
+    { "do": "waitShell", "overlayShows": 2 },
+    { "do": "state", "expect": { "approvals": [ { "session": "s-dup", "tool": "Bash" } ], "events": [ "PermissionRequest", "PreToolUse" ] } },
+    { "do": "decide", "via": "app", "approval": 0, "action": "allow", "expect": { "resolved": true } },
+    { "do": "response", "of": "first", "expect": { "status": 200, "body": { "hookSpecificOutput": { "decision": { "behavior": "allow" } } } } },
+    { "do": "response", "of": "second", "expect": { "status": 200, "body": { "hookSpecificOutput": { "decision": { "behavior": "allow" } } } } },
+
+    { "do": "hook", "body": { "hook_event_name": "PreToolUse", "session_id": "s-dup", "tool_name": "Bash", "tool_use_id": "tu-2", "tool_input": { "command": "make test" } } },
+    { "do": "permission", "as": "dismissed", "waitApprovals": 1,
+      "body": { "hook_event_name": "PermissionRequest", "session_id": "s-dup", "tool_name": "Bash", "tool_input": { "command": "make test" } } },
+    { "do": "hook", "body": { "hook_event_name": "PostToolUse", "session_id": "s-dup", "tool_name": "Bash", "tool_use_id": "tu-2", "tool_input": { "command": "make test" }, "tool_response": { "stdout": "ok" } } },
+    { "do": "response", "of": "dismissed", "expect": { "status": 204 } },
+    { "do": "state", "expect": { "approvals": [], "notifications": [ { "category": "permission_request", "outcome": "dismissed" }, { "outcome": "allowed" } ] } },
+
+    { "do": "permission", "as": "stopped", "waitApprovals": 1,
+      "body": { "hook_event_name": "PermissionRequest", "session_id": "s-dup", "tool_name": "Read", "tool_input": { "file_path": "C:/fixture/x" } } },
+    { "do": "hook", "body": { "hook_event_name": "Stop", "session_id": "s-dup" } },
+    { "do": "response", "of": "stopped", "expect": { "status": 204 } },
+    { "do": "state", "expect": { "approvals": [], "sessions": [ { "id": "s-dup", "status": "active", "phase": "idle" } ] } },
+
+    { "do": "permission", "as": "shutdown", "waitApprovals": 1,
+      "body": { "hook_event_name": "PermissionRequest", "session_id": "s-dup", "tool_name": "Glob", "tool_input": { "pattern": "*" } } },
+    { "do": "stop" },
+    { "do": "response", "of": "shutdown", "expect": { "status": 204 } },
+    { "do": "state", "expect": { "approvals": [] } }
+  ]
+}

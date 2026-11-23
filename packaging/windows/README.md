@@ -1,7 +1,8 @@
-# Windows packaging (end-to-end untested)
+# Windows packaging
 
-The assets, Electron packaging wrapper and MSIX staging/signing scripts exist. An installed build
-has not been validated since the CCF rename. See [STATUS](../../docs/STATUS.md).
+The packaged Electron app (`prepare-app -RunPackager`) builds and passes the smoke run in test mode (process-split
+plan, step 7, 2026-11-06). The MSIX staging/signing scripts exist; an installed MSIX has not been validated since the
+CCF rename. See [STATUS](../../docs/STATUS.md).
 
 ## Current contents
 
@@ -30,8 +31,25 @@ npm run packaging:windows:manifest
 npm run packaging:windows:stage-msix
 ```
 
-`prepare-app` without `-RunPackager` writes instructions only. With it, the wrapper invokes the
-workspace's declared `@electron/packager` dependency and copies its output into `input/app/`.
+`prepare-app` without `-RunPackager` writes instructions only. With it, the wrapper first stages the app
+(`scripts/windows/stage-electron-app.mjs` into `input/stage/`), then invokes the workspace's declared
+`@electron/packager` dependency on that stage and copies its output into `input/app/`.
+
+The stage mirrors the repo's layout for what CCF runs: `apps/windows-shell` (without its tests), `packages/core`
+(main, the core, the companion and the renderer pages import it by relative path), `scripts/windows/codex-hook-sender.mjs`,
+and from the root `node_modules` only `node-pty` (lib and the win32-x64 prebuilds, without debug symbols) and
+`@xterm/headless`. Its `package.json` names the installed Electron version (the packager takes that zip from
+@electron/get's cache). `node:sqlite` ships with Electron. Inside `app.asar` everything resolves as in a dev run;
+what programs outside Electron open by path is unpacked next to it (`app.asar.unpacked`: node-pty, `*.ps1` such as the
+companion's kill-on-close job helper, the Codex hook sender), and `services/asar-paths.js` hands them those paths.
+`stage-electron-app.test.mjs` checks that every module the app loads is staged.
+
+To check a packaged build without installing it (test mode, temp folders, the PowerShell companion fixture):
+
+```powershell
+$env:CCF_SMOKE_APP = "packaging\windows\input\ChaosCatFamiliar-win32-x64\ChaosCatFamiliar.exe"
+npm run smoke:windows-shell
+```
 `stage-msix` copies the app and assets into `out/msix-stage/`; it does not create an MSIX by default.
 
 To create and sign the development MSIX, install the Windows SDK and make `makeappx.exe` and

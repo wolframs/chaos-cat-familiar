@@ -330,7 +330,7 @@ export class ShellUiState {
     const parsed = parseIso(snoozeUntil);
     if (parsed && parsed.getTime() <= Date.now()) {
       this.settingsStore.save({
-        ...settings,
+        ...this.settingsStore.load({ revalidate: true }),
         snoozeUntil: null
       });
     }

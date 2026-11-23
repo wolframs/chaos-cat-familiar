@@ -31,6 +31,28 @@ test('Claude uses its saved repository on the next explicit start, without chang
   assert.equal(launches[1].cwd, 'C:\\later');
 });
 
+// Review of step 5 (P2): raw keys typed for one PTY could reach the next one after a restart.
+test('raw input names the PTY it was typed for; keys for an earlier one are refused', async t => {
+  const ptys = [];
+  const session = new CompanionSession({ repoPath: 'C:/repo', existingSessionProbe: async () => null,
+    ptyFactory: async () => { const pty = new FakePty(); ptys.push(pty); return pty; } });
+  t.after(() => session.stop());
+  await session.start({ userInitiated: true });
+  const first = session.getSnapshot().ptyId;
+  assert.equal(typeof first, 'string');
+  session.write('a', { ptyId: first });
+  session.write('b');   // a page from before this check names no PTY
+  await session.stop();
+  assert.equal(session.getSnapshot().ptyId, null, 'no PTY, no id');
+  await session.start({ userInitiated: true });
+  const second = session.getSnapshot().ptyId;
+  assert.notEqual(second, first);
+  assert.throws(() => session.write('c', { ptyId: first }), /previous terminal session/);
+  session.write('d', { ptyId: second });
+  assert.deepEqual(ptys[0].writes, ['a', 'b']);
+  assert.deepEqual(ptys[1].writes, ['d']);
+});
+
 function screenWhen(session, expected) {
   if (session.getSnapshot().terminal.screen === expected) return Promise.resolve();
   return new Promise((resolve, reject) => {

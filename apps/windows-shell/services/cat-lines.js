@@ -3,15 +3,16 @@
 // (assets/cat-lines.json, his text, approved 2026-11-02). The catalog's meta block is the spec:
 // tiers by weight, an empty tier falls back to the next lower one, lore can replace any bubble
 // at legendary weight, night lines can replace a common line inside the night window.
-import fs from "node:fs";
+import fs from "node:fs/promises";
 
 export const TIERS = ["common", "uncommon", "rare", "legendary"];
 export const DEFAULT_WEIGHTS = { common: 70, uncommon: 22, rare: 7, legendary: 1 };
 export const DEFAULT_NIGHT_WINDOW = { from: "22:00", to: "05:00", replace_chance: 0.33 };
 const PLACEHOLDER = /\{([a-z_]+)\}/g;
 
-export function loadCatLinesCatalog(file) {
-  return JSON.parse(fs.readFileSync(file, "utf8"));
+// Read without blocking: main shows the bubbles (process-split plan, step 7).
+export async function loadCatLinesCatalog(file) {
+  return JSON.parse(await fs.readFile(file, "utf8"));
 }
 
 // A line whose placeholders are not all supplied is not usable: "{agent} iz idle {mins} min"

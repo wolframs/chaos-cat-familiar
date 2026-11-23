@@ -1,3 +1,6 @@
+import { subscribeCoreState } from "./view-subscription.js";
+import { composeLegacyState } from "./legacy-state.js";
+
 const stateEl = document.getElementById("state");
 const logsEl = document.getElementById("logs");
 const supportTiersEl = document.getElementById("supportTiers");
@@ -30,6 +33,48 @@ const mascotLibraryEl = document.getElementById("mascotLibrary");
 let latestMascotLibrary = null;
 let logMetadata = null;
 
+// Process-split plan, step 5: with a port of its own, diagnostics takes the core's base state from it while visible,
+// and the expensive reads (hook diagnosis, settings, mascots, log metadata) and the log run on demand: when the window
+// opens, on its buttons and after a hook install, no longer on every hook event. New log lines are fetched at most
+// once a second while the window shows. Main sends no state of its own (step 7).
+const LOG_LIMIT = 200;
+let coreState = null;
+let shellState = null;
+let onDemand = null;          // { diagnostics, settings, mascotLibrary } from the last full render
+let logs = [];
+let logId = null;
+let logTimer = null;
+const live = subscribeCoreState({ topics: ["base"], whileVisible: true,
+  onState: (value) => { coreState = value; renderLive(); } });
+window.ccf.onShellState((value) => { shellState = value; renderLive(); });
+window.ccf.getShellState().then((value) => { shellState ??= value; renderLive(); }).catch(() => {});
+
+function livePayload() {
+  const core = coreState ?? { sessions: [], approvals: [], notifications: [], events: [], logs: [] };
+  return { state: { ...composeLegacyState(core, shellState, live?.mirror), logs }, ...onDemand };
+}
+
+function renderLive() {
+  if (!onDemand) return;   // the first full render has not finished
+  if ((coreState?.summary?.latestLogId ?? null) !== logId) scheduleLogs();
+  renderPayload(livePayload());
+}
+
+async function loadLogs() {
+  if (!live) return;
+  const result = await live.query("logs", { limit: LOG_LIMIT });
+  logs = result.logs ?? [];
+  logId = logs[0]?.id ?? null;
+}
+
+function scheduleLogs() {
+  if (logTimer !== null) return;
+  logTimer = setTimeout(async () => {
+    logTimer = null;
+    try { await loadLogs(); if (onDemand) renderPayload(livePayload()); } catch { /* hidden or reconnecting */ }
+  }, 1000);
+}
+
 function logUi(level, message, context = {}) {
   window.ccf?.log?.({
     level,
@@ -40,8 +85,7 @@ function logUi(level, message, context = {}) {
 }
 
 async function render() {
-  const [state, diagnostics, settings, mascotLibrary, nextLogMetadata] = await Promise.all([
-    window.ccf.getState(),
+  const [diagnostics, settings, mascotLibrary, nextLogMetadata] = await Promise.all([
     window.ccf.diagnoseHooks(),
     window.ccf.getSettings(),
     window.ccf.getMascotLibrary(),
@@ -63,7 +107,9 @@ async function render() {
   approveTopHotkey.value = settings.hotkeys?.approveTop ?? "";
   denyTopHotkey.value = settings.hotkeys?.denyTop ?? "";
   deferTopHotkey.value = settings.hotkeys?.deferTop ?? "";
-  renderPayload({ state, diagnostics, settings, mascotLibrary });
+  onDemand = { diagnostics, settings, mascotLibrary };
+  try { await loadLogs(); } catch { /* the port is not there yet: the first state fetches the log */ }
+  renderPayload(livePayload());
 }
 
 function renderPayload(payload) {
@@ -148,9 +194,6 @@ window.ccf.onHookInstallResult(async () => {
   await render();
 });
 
-window.ccf.onState(async () => {
-  await render();
-});
 
 saveSettings.addEventListener("click", async () => {
   await window.ccf.updateSettings({

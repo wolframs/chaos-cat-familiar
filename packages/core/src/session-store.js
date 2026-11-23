@@ -2,12 +2,42 @@ import { HookEventType } from "./event-types.js";
 import { assistantLabelOf, eventTypeOf, projectNameOf } from "./models.js";
 
 const MAX_ENDED_SESSIONS = 200;
+const MAX_TOOLS_IN_FLIGHT = 32;
+
+// Tool calls between PreToolUse and PostToolUse(Failure), keyed by toolUseId.
+// Subagent tool hooks share the parent's session id; matching by id keeps them apart.
+function trackToolsInFlight(session, type, event) {
+  if (!Array.isArray(session.toolsInFlight)) session.toolsInFlight = [];
+  const key = event.toolUseId ?? "?";
+  switch (type) {
+    case HookEventType.PRE_TOOL_USE:
+      if (!session.toolsInFlight.includes(key)) session.toolsInFlight.push(key);
+      if (session.toolsInFlight.length > MAX_TOOLS_IN_FLIGHT) session.toolsInFlight.shift();
+      break;
+    case HookEventType.POST_TOOL_USE:
+    case HookEventType.POST_TOOL_USE_FAILURE: {
+      const index = session.toolsInFlight.indexOf(key);
+      if (index >= 0) session.toolsInFlight.splice(index, 1);
+      break;
+    }
+    case HookEventType.SESSION_START:
+    case HookEventType.SESSION_END:
+    case HookEventType.USER_PROMPT_SUBMIT:
+    case HookEventType.INTERRUPT:
+    case HookEventType.STOP:
+      session.toolsInFlight = [];
+      break;
+    default:
+      break;
+  }
+}
 
 export class SessionStore {
   constructor(initialSessions = []) {
     this.sessions = initialSessions.map((session) => {
       const { assistantSource, ...restored } = session;
-      return { ...restored, backend:restored.backend??'claude',conversationId:restored.conversationId??restored.id, assistantLabel: assistantLabelOf(restored), terminalPid: null };
+      // In-flight tool calls belong to the previous CCF run; their Post events may be lost.
+      return { ...restored, backend:restored.backend??'claude',conversationId:restored.conversationId??restored.id, assistantLabel: assistantLabelOf(restored), terminalPid: null, toolsInFlight: [] };
     });
     this.pruneEnded();
   }
@@ -39,6 +69,37 @@ export class SessionStore {
     return this.sessions.filter((session) => session.status === "active");
   }
 
+  // Claude sessions that died without SessionEnd (a killed terminal, a crash, CCF closed while the relay dropped the
+  // event) stay "active" for ever otherwise: 32 of 35 on 2026-11-17, the oldest 29 days. liveIds: the session ids in
+  // Claude Code's registry (~/.claude/sessions) whose process runs. A Claude session missing there and quiet for
+  // quietMs is ended; Codex sessions are not in that registry and stay as they are. Returns the ended sessions.
+  // inScope(session): the session belongs to the registry liveIds were read from (review 2, finding 1: a WSL or
+  // other-profile session is in no registry the sweep reads). only: the candidates the registry was checked for.
+  vanishCandidates({ now = Date.now(), quietMs = 120000, keepIds = new Set(), inScope = null } = {}) {
+    return this.sessions.filter((session) => {
+      if (session.status !== "active" || (session.backend ?? "claude") !== "claude" || session.observationOnly === true) return false;
+      if (keepIds.has(session.id) || (inScope && !inScope(session))) return false;
+      const last = new Date(session.lastEventAt ?? session.startedAt ?? 0).getTime() || 0;
+      return now - last >= quietMs;
+    });
+  }
+
+  endVanished(liveIds, { only = null, ...options } = {}) {
+    const ended = [];
+    for (const session of this.vanishCandidates(options)) {
+      if (liveIds.has(session.id) || (only && !only.has(session.id))) continue;
+      session.status = "ended";
+      session.phase = "idle";
+      session.isCompacting = false;
+      session.phaseBeforeCompaction = null;
+      session.activeSubagentCount = 0;
+      session.toolsInFlight = [];
+      session.endReason = "vanished";
+      ended.push(session);
+    }
+    return ended;
+  }
+
   recordEvent(event) {
     if (!event.sessionId) {
       return null;
@@ -57,11 +118,14 @@ export class SessionStore {
         assistantLabel: assistantLabelOf(event),
         status: "active",
         phase: type === HookEventType.USER_PROMPT_SUBMIT ? "running" : "idle",
+        maintenance: (type === HookEventType.USER_PROMPT_SUBMIT && event.maintenance === true) ||
+          (type === HookEventType.STOP && event.turnMaintenance === true),
         eventCount: 1,
         startedAt: new Date(),
         lastEventAt: new Date(),
         lastToolName: event.toolName ?? null,
         activeSubagentCount: 0,
+        toolsInFlight: [],
         isCompacting: type === HookEventType.PRE_COMPACT,
         phaseBeforeCompaction: type === HookEventType.PRE_COMPACT ? "idle" : null,
         ...(type === HookEventType.PRE_COMPACT ? { phase: "compacting" } : {}),
@@ -69,9 +133,11 @@ export class SessionStore {
         shellPid: event.shellPid ?? null,
         transcriptPath: event.transcriptPath ?? null
       };
+      trackToolsInFlight(session, type, event);
       this.sessions.unshift(session);
       return session;
     }
+    trackToolsInFlight(existing, type, event);
 
     existing.eventCount += 1;
     existing.lastEventAt = new Date();
@@ -91,6 +157,12 @@ export class SessionStore {
         existing.phaseBeforeCompaction = null;
         break;
       case HookEventType.USER_PROMPT_SUBMIT:
+        // A cache-warm ping's turn stays marked until the next real prompt: its Stop and the idle_prompt after it
+        // are no news (the controller drops their notifications).
+        existing.maintenance = event.maintenance === true;
+        existing.status = "active";
+        existing.phase = "running";
+        break;
       case HookEventType.PRE_TOOL_USE:
       case HookEventType.POST_TOOL_USE:
       case HookEventType.POST_TOOL_USE_FAILURE:
@@ -109,10 +181,16 @@ export class SessionStore {
         existing.phaseBeforeCompaction=null;
         existing.isCompacting=false;
         break;
+      case HookEventType.STOP:
+        // The transcript's verdict on the turn that ended (review 2, finding 4: its UserPromptSubmit may come later).
+        if (typeof event.turnMaintenance === "boolean") existing.maintenance = event.turnMaintenance;
+        existing.phase = "idle";
+        existing.isCompacting = false;
+        existing.phaseBeforeCompaction = null;
+        break;
       case HookEventType.INTERRUPT:
       case HookEventType.TASK_COMPLETED:
       case HookEventType.TEAMMATE_IDLE:
-      case HookEventType.STOP:
         existing.phase = "idle";
         existing.isCompacting = false;
         existing.phaseBeforeCompaction = null;
@@ -135,6 +213,7 @@ export class SessionStore {
       default:
         break;
     }
+    if (existing.status === "active") delete existing.endReason;
 
     return existing;
   }

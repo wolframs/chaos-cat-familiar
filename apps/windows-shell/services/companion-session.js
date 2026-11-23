@@ -1,4 +1,5 @@
 import { EventEmitter } from "node:events";
+import { randomUUID } from "node:crypto";
 import { readdir, readFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import path from "node:path";
@@ -122,6 +123,8 @@ export class CompanionSession extends EventEmitter {
       messages: [],
       liveText: "",
       pendingPrompt: null,
+      // Which PTY this snapshot shows; raw keys name it, so keys typed for one never reach the next (review of step 5).
+      ptyId: null,
       terminal: { needed: false, reason: "", screen: "", lines: [], history: [], cursor: { row: 0, column: 0 } }
     };
   }
@@ -173,6 +176,7 @@ export class CompanionSession extends EventEmitter {
     this.snapshot.connected = true;
     this.snapshot.phase = "working";
     this.snapshot.liveText = "";
+    this.snapshot.ptyId = randomUUID();
     this.snapshot.terminal = {
       needed: true, reason: "Interactive Claude Code session", screen: "", lines: [], history: [],
       cursor: { row: 0, column: 0 }, revision: ++this.terminalRevision
@@ -228,6 +232,7 @@ export class CompanionSession extends EventEmitter {
         this.snapshot.connected = false;
         this.snapshot.phase = "offline";
         this.snapshot.pendingPrompt = null;
+        this.snapshot.ptyId = null;
         this.snapshot.terminal.needed = false;
         this.emit("exit", event);
         this.#changed();
@@ -303,9 +308,14 @@ export class CompanionSession extends EventEmitter {
     this.#changed();
   }
 
-  write(data) {
+  // ptyId: the PTY the keys were typed for (the conversation page names it); keys for another one are refused.
+  write(data, { ptyId = null } = {}) {
     if (typeof data !== "string" || !data) throw new TypeError("Terminal input must be nonempty text.");
-    this.#requirePty().write(data);
+    const pty = this.#requirePty();
+    if (ptyId !== null && ptyId !== this.snapshot.ptyId) {
+      throw new Error("These keys were typed for the previous terminal session and were not sent.");
+    }
+    pty.write(data);
   }
 
   interrupt() { this.#requirePty().write("\x03"); }

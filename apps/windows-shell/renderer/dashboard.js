@@ -1,5 +1,7 @@
 import { sessionActivationTarget } from "./session-activation.js";
 import { dashboardApprovalSubmission } from "./dashboard-approval-input.js";
+import { subscribeCoreState } from "./view-subscription.js";
+import { composeLegacyState } from "./legacy-state.js";
 
 const nav = document.getElementById("nav");
 const summary = document.getElementById("summary");
@@ -60,6 +62,52 @@ const settingsDrafts = new Map();
 const settingsFeedback = new Map();
 let lastApprovalsSignature = null;
 
+// Process-split plan, step 5: the core's state comes on this window's own port while it is visible (the newest 50
+// events; a filter or search asks the core for the whole retained history on demand), main's part (meta, onboarding
+// and other shell UI state) from ccf:shell-state. Main sends no state of its own (step 7).
+const ACTIVITY_WINDOW = 50;
+let coreState = null;
+let shellState = null;
+let activityResults = null;
+let historyTimer = null;
+let historyKey = null;
+const live = subscribeCoreState({ topics: ["base", "events"], eventLimit: ACTIVITY_WINDOW, whileVisible: true,
+  onState: (value) => { coreState = value; applyLiveState(); } });
+window.ccf.onShellState((value) => { shellState = value; applyLiveState(); });
+window.ccf.getShellState().then((value) => { shellState ??= value; applyLiveState(); }).catch(() => {});
+
+function applyLiveState() {
+  if (!coreState) return;
+  state = composeLegacyState(coreState, shellState, live.mirror);
+  selectInitialSection();
+  renderNav();
+  renderSummary();
+  renderPushedView();
+  renderOnboarding();
+  scheduleHistoryQuery();
+}
+
+function activityFiltered() {
+  return activityFilter !== "all" || Boolean(activitySearch);
+}
+
+// A filter or search runs over the core's whole retained history, asked again when new events arrive.
+function scheduleHistoryQuery({ now = false } = {}) {
+  if (!live || !activityFiltered()) { activityResults = null; historyKey = null; return; }
+  const key = JSON.stringify([activityFilter, activitySearch, state?.summary?.eventCount, state?.summary?.latestEventAt]);
+  if (key === historyKey && !now) return;
+  historyKey = key;
+  clearTimeout(historyTimer);
+  historyTimer = setTimeout(async () => {
+    const asked = { hookEventName: activityFilter, search: activitySearch };
+    try {
+      const result = await live.query("history", { ...asked, limit: 40 });
+      if (asked.hookEventName !== activityFilter || asked.search !== activitySearch) return;
+      activityResults = result;
+      if (currentSection === "activity") renderActivityBody();
+    } catch { /* hidden or reconnecting: the next state asks again */ }
+  }, now ? 0 : 250);
+}
 function esc(value) {
   return String(value ?? "").replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;");
 }
@@ -149,12 +197,28 @@ function setSection(id, toolbar = "") {
   viewToolbar.innerHTML = toolbar;
 }
 
-function renderActivity() {
-  const events = (state?.events ?? []).filter((item) => {
+function activityEvents() {
+  if (live && activityFiltered()) return (activityResults?.events ?? []).slice(0, 40);
+  return (state?.events ?? []).filter((item) => {
     const typeMatch = activityFilter === "all" || (item.hookEventName ?? "") === activityFilter;
     const textMatch = !activitySearch || JSON.stringify(item).toLowerCase().includes(activitySearch.toLowerCase());
     return typeMatch && textMatch;
   }).slice(0, 40);
+}
+
+function renderActivityBody() {
+  const events = activityEvents();
+  const waiting = live && activityFiltered() && !activityResults;
+  viewBody.innerHTML = events.length ? events.map((item) => card(
+    item.hookEventName ?? "Event",
+    item.message ?? item.cwd ?? item.projectDir ?? item.sessionId ?? "Runtime event",
+    [item.toolName ? badge(item.toolName) : "", item.timestamp ? `<span class="ccf-chip">${ago(item.timestamp)}</span>` : ""].filter(Boolean)
+  )).join("") : waiting ? `<div class="muted">Searching the history...</div>`
+    : empty("No matching activity", "Adjust the filter or wait for a new assistant event.");
+}
+
+function renderActivity({ toolbar = true } = {}) {
+  if (!toolbar && viewToolbar.querySelector("#activitySearch")) { renderActivityBody(); return; }
   setSection("activity", `
     <div class="search-row">
       <input class="ccf-input" id="activitySearch" placeholder="Search events, tools, paths, or session ids" value="${esc(activitySearch)}" />
@@ -169,13 +233,20 @@ function renderActivity() {
     </div>
   `);
   viewToolbar.querySelector("#activityFilter").value = activityFilter;
-  viewToolbar.querySelector("#activitySearch").addEventListener("input", (event) => { activitySearch = event.target.value; renderActivity(); });
-  viewToolbar.querySelector("#activityFilter").addEventListener("change", (event) => { activityFilter = event.target.value; renderActivity(); });
-  viewBody.innerHTML = events.length ? events.map((item) => card(
-    item.hookEventName ?? "Event",
-    item.message ?? item.cwd ?? item.projectDir ?? item.sessionId ?? "Runtime event",
-    [item.toolName ? badge(item.toolName) : "", item.timestamp ? `<span class="ccf-chip">${ago(item.timestamp)}</span>` : ""].filter(Boolean)
-  )).join("") : empty("No matching activity", "Adjust the filter or wait for a new assistant event.");
+  // Typing re-renders only the list, so the search field keeps its focus.
+  viewToolbar.querySelector("#activitySearch").addEventListener("input", (event) => {
+    activitySearch = event.target.value;
+    activityResults = null;
+    renderActivityBody();
+    scheduleHistoryQuery({ now: false });
+  });
+  viewToolbar.querySelector("#activityFilter").addEventListener("change", (event) => {
+    activityFilter = event.target.value;
+    activityResults = null;
+    renderActivityBody();
+    scheduleHistoryQuery({ now: true });
+  });
+  renderActivityBody();
 }
 
 function renderNotifications() {
@@ -485,12 +556,13 @@ function renderOnboarding() {
 }
 
 async function refresh() {
-  [state, settings, mascotLibrary, logMetadata] = await Promise.all([
-    window.ccf.getState(),
+  // The state comes on the port; only main's own reads here.
+  [settings, mascotLibrary, logMetadata] = await Promise.all([
     window.ccf.getSettings(),
     window.ccf.getMascotLibrary(),
     window.ccf.getLogMetadata()
   ]);
+  if (coreState) state = composeLegacyState(coreState, shellState, live?.mirror);
   selectInitialSection();
   renderNav();
   renderSummary();
@@ -502,8 +574,10 @@ async function refresh() {
   }).catch(() => {});
 }
 
+// The first section follows the first state (approvals pending: Approvals); main's reads before the core's state
+// arrived on the port do not decide it.
 function selectInitialSection() {
-  if (!receivedInitialState) {
+  if (!receivedInitialState && state) {
     currentSection = state?.approvals?.length ? "approvals" : "activity";
     receivedInitialState = true;
   }
@@ -522,6 +596,7 @@ function editingSettings() {
 }
 function renderPushedView() {
   if (editingSettings()) { deferredSettingsRender = true; return; }
+  if (currentSection === "activity" && state && settings && mascotLibrary) { renderActivity({ toolbar: false }); return; }
   renderView();
 }
 viewBody.addEventListener("focusout", () => setTimeout(() => {
@@ -530,7 +605,6 @@ viewBody.addEventListener("focusout", () => setTimeout(() => {
   renderView();
 }));
 
-window.ccf.onState((value) => { state = value; selectInitialSection(); renderNav(); renderSummary(); renderPushedView(); renderOnboarding(); });
 window.ccf.onSettings((value) => { settings = value; renderSummary(); renderPushedView(); });
 window.ccf.onMascotLibrary((value) => { mascotLibrary = value; renderSummary(); renderPushedView(); });
 window.ccf.onDashboardSection?.((section) => {

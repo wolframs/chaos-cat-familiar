@@ -5,7 +5,7 @@ import os from "node:os";
 import path from "node:path";
 import http from "node:http";
 import { spawn } from "node:child_process";
-import { ElectronHookInstallationService, __testing } from "../services/platform-services.js";
+import { ElectronHookInstallationService, __testing } from "../services/claude-hook-installer.js";
 import { CcfCoreController, HookServer } from "../../../packages/core/src/index.js";
 
 function fixture(t, settings = { port: 49152 }) {
@@ -66,6 +66,29 @@ test("installer replaces owned legacy hooks, preserves other hooks and skips unc
   await service.install();
   assert.equal(fs.readFileSync(settingsPath, "utf8"), raw);
   assert.equal(fs.statSync(settingsPath).mtimeMs, before);
+});
+
+test("with hookRelayPort set, routine http hooks go to the relay and a relay-port change is drift", async (t) => {
+  const settings = { port: 49152, hookToken: "relay-token", hookRelayPort: 49151 };
+  const { home, service } = fixture(t, settings);
+  const settingsPath = path.join(home, ".claude", "settings.json");
+  await service.install();
+  const parsed = JSON.parse(fs.readFileSync(settingsPath, "utf8"));
+  for (const event of ["PreToolUse", "PostToolUse", "Stop", "SessionEnd"]) {
+    assert.deepEqual(parsed.hooks[event][0].hooks[0], { type: "http", url: "http://127.0.0.1:49151/hook",
+      headers: { "X-Ccf-Token": "relay-token" }, timeout: 5 }, event);
+  }
+  // The command hooks are untouched by the relay setting.
+  assert.equal(parsed.hooks.SessionStart[0].hooks[0].type, "command");
+  const { describeHookDrift } = __testing;
+  const commandMatches = Object.entries(parsed.hooks).map(([eventName, entries]) => ({ eventName,
+    commands: entries.flatMap((e) => e.hooks).map((h) => String(h.command ?? "")), hooks: entries.flatMap((e) => e.hooks) }));
+  const hookPath = path.join(home, ".chaos-cat-familiar", "hooks", "hook-sender.ps1");
+  const expectedEvents = Object.keys(parsed.hooks);
+  assert.deepEqual(describeHookDrift({ commandMatches, expectedEvents, expectedHookPath: hookPath, settings }).registrationMismatch, []);
+  const direct = { ...settings, hookRelayPort: null };
+  assert.ok(describeHookDrift({ commandMatches, expectedEvents, expectedHookPath: hookPath, settings: direct })
+    .registrationMismatch.includes("PreToolUse"));
 });
 
 test("diagnose treats http hooks as CCF-owned, flags token and port drift, and install/uninstall rewrite only CCF entries", async (t) => {

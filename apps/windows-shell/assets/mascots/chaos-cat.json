@@ -81,17 +81,12 @@
       "conditions": [
         {
           "op": "==",
-          "input": "claudeCode::isWorking",
+          "input": "claudeCode::isToolRunning",
           "value": true
         },
         {
           "op": "==",
           "input": "claudeCode::isAlert",
-          "value": false
-        },
-        {
-          "op": "==",
-          "input": "claudeCode::isCompacting",
           "value": false
         }
       ],
@@ -125,7 +120,7 @@
       "conditions": [
         {
           "op": "==",
-          "input": "claudeCode::isCompacting",
+          "input": "claudeCode::isThinking",
           "value": true
         },
         {
@@ -153,11 +148,6 @@
         {
           "op": "==",
           "input": "claudeCode::isAlert",
-          "value": false
-        },
-        {
-          "op": "==",
-          "input": "claudeCode::isCompacting",
           "value": false
         }
       ],
@@ -198,11 +188,6 @@
           "op": "==",
           "input": "claudeCode::isAlert",
           "value": false
-        },
-        {
-          "op": "==",
-          "input": "claudeCode::isCompacting",
-          "value": false
         }
       ],
       "videos": {
@@ -218,17 +203,12 @@
       "conditions": [
         {
           "op": "==",
-          "input": "claudeCode::isWorking",
+          "input": "claudeCode::isToolRunning",
           "value": true
         },
         {
           "op": "==",
           "input": "claudeCode::isAlert",
-          "value": false
-        },
-        {
-          "op": "==",
-          "input": "claudeCode::isCompacting",
           "value": false
         }
       ],
@@ -245,7 +225,7 @@
       "conditions": [
         {
           "op": "==",
-          "input": "claudeCode::isCompacting",
+          "input": "claudeCode::isThinking",
           "value": true
         },
         {
@@ -267,7 +247,7 @@
       "conditions": [
         {
           "op": "==",
-          "input": "claudeCode::isCompacting",
+          "input": "claudeCode::isThinking",
           "value": true
         },
         {
@@ -296,11 +276,6 @@
           "op": "==",
           "input": "claudeCode::isAlert",
           "value": false
-        },
-        {
-          "op": "==",
-          "input": "claudeCode::isCompacting",
-          "value": false
         }
       ],
       "videos": {
@@ -316,17 +291,12 @@
       "conditions": [
         {
           "op": "==",
-          "input": "claudeCode::isWorking",
+          "input": "claudeCode::isToolRunning",
           "value": true
         },
         {
           "op": "==",
           "input": "claudeCode::isAlert",
-          "value": false
-        },
-        {
-          "op": "==",
-          "input": "claudeCode::isCompacting",
           "value": false
         }
       ],

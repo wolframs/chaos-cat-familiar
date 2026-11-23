@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Chaos Cat Familiar Companion Panel</title>
+    <link rel="stylesheet" href="./brand-tokens.css" />
+    <link rel="stylesheet" href="./companion-panel.css" />
+  </head>
+  <body>
+    <main id="surface" class="surface" data-state="missing">
+      <header class="header">
+        <span id="panelTitle" class="title">panel</span>
+        <span id="panelStatus" class="status"></span>
+      </header>
+      <div id="panelList" class="list" role="list"></div>
+      <div id="panelStrip" class="strip" hidden></div>
+    </main>
+    <script type="module" src="./companion-panel.js"></script>
+    <script type="module" src="./design-reload.js"></script>
+  </body>
+</html>

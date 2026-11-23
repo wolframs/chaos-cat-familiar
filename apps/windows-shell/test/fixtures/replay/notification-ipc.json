@@ -1,0 +1,20 @@
+{
+  "name": "notification IPC: read, dismiss and mark all read through the shell; the overlay gets the state without history or notification list",
+  "steps": [
+    { "do": "hook", "body": { "hook_event_name": "SessionStart", "session_id": "s-1", "cwd": "$OTHER" } },
+    { "do": "hook", "body": { "hook_event_name": "Notification", "session_id": "s-1", "notification_type": "idle_prompt" } },
+    { "do": "state", "expect": { "notifications": [ { "category": "idle_alert", "isRead": false }, { "category": "session_lifecycle", "isRead": false } ], "unread": 2 } },
+    { "do": "ipc", "channel": "ccf:notification-action", "args": [ { "action": "mark-read", "id": "$NOTIFICATION0" } ], "expect": true },
+    { "do": "state", "expect": { "notifications": [ { "isRead": true }, { "isRead": false } ], "unread": 1 } },
+    { "do": "ipc", "channel": "ccf:notification-action", "args": [ { "action": "mark-all-read" } ], "expect": true },
+    { "do": "ipc", "channel": "ccf:notification-action", "args": [ { "action": "mark-all-read" } ], "expect": false },
+    { "do": "ipc", "channel": "ccf:notification-action", "args": [ { "action": "dismiss", "id": "$NOTIFICATION0" } ], "expect": true },
+    { "do": "ipc", "channel": "ccf:notification-action", "args": [ { "action": "dismiss", "id": "missing" } ], "expect": false },
+    { "do": "ipc", "channel": "ccf:notification-action", "args": [ { "action": "explode", "id": "missing" } ], "expect": false },
+    { "do": "state", "expect": { "notifications": [ { "category": "session_lifecycle", "isRead": true } ], "unread": 0 } },
+    { "do": "overlay", "noLegacyState": true, "expect": { "events": [], "logs": [], "meta": { "eventCount": 2, "unreadNotificationCount": 0 },
+      "notifications": [] } },
+    { "do": "sent", "window": "dashboard", "absent": true },
+    { "do": "ipc", "channel": "ccf:get-shell-state", "args": [], "expect": { "meta": { "overlayMode": "mascot" }, "hostedCompanion": null } }
+  ]
+}

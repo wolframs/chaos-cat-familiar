@@ -54,25 +54,32 @@ in-memory entries and console output remain immediate. Rotation still keeps two 
 Directory/size metadata is cached. Disk failures keep a bounded buffer, expose dropped-line counts
 and do not start an idle retry loop. Logging/profiling failures remain isolated from approvals.
 
-## State checkpoints and unclean shutdowns
+## State database and unclean shutdowns
 
-Hook state is immediately visible in memory. Disk checkpoints coalesce over 250 ms,
-serializing the latest pending state through same-directory atomic replacement.
-Explicit settings changes still save immediately. Failed checkpoints retain the latest
-state in memory and the last valid disk checkpoint; later activity or shutdown can retry.
-Batched store `load()` reads the disk checkpoint rather than pending memory changes.
+Hook state is immediately visible in memory. Since the process split's step 6 the core's storage worker commits
+the rows that changed to `%APPDATA%\chaos-cat-familiar\ccf.sqlite` after a 100 ms batching delay (WAL,
+`synchronous=FULL`). The delay is not a bound on what a crash loses: a commit that waits on a slow disk or the
+scanner takes longer, and the next batch waits for it.
+A failed commit leaves the latest state in memory and the database as it was; the next activity or the quit
+retries. Settings are written by the same worker (asynchronous rename retries; a held file keeps the patch in
+memory and retries after 1, 3, 10 s). To read the database while CCF runs:
+`node scripts/windows/storage-export.mjs --out <folder>` (read-only; writes `state.json` and
+`companion-delivery.json` there). A database SQLite cannot read is moved aside with a `.README.txt` and a fresh
+one starts.
 
-`%APPDATA%\chaos-cat-familiar\run-marker.json` is written once at startup and removed
-only after orderly shutdown has flushed state, logs and pending placement. It uses no
-periodic heartbeat. A leftover marker produces a warning on the next launch; CCF loads
-the last valid checkpoint. Fatal errors, failed startup and failed final writes retain
-the marker. Malformed JSON uses the existing quarantine/recovery-note mechanism.
+`%APPDATA%\chaos-cat-familiar\run-marker.json` is written by the core's storage worker when a run starts (a core
+restarted within the run keeps it) and removed only after main judged the quit clean (state, settings and log
+committed, main's own writes done). There is no heartbeat file or monitoring process.
+A marker left by an unclean exit produces a warning in the core's log on the next launch; CCF loads its last
+committed state. Fatal errors and failed startup retain the marker even after a best-effort flush.
 Pending approvals are not replayed or automatically answered after a restart.
 
-An abrupt kill or power loss can lose the latest buffered history/logs; scheduling stalls
-can extend the nominal 250 ms window. The marker cannot reconstruct unwritten data.
-Diagnostic metadata includes `persistence` and `recovery`, alongside buffered bytes,
-dropped log lines and placement status. Local-data cleanup removes the marker/checkpoint.
+An abrupt kill or power loss loses what was not committed yet: at least the last batch (100 ms), more while a
+commit waits on the disk, and the last batch of log lines. The marker
+detects an unclean run; it cannot reconstruct data that never reached disk.
+Diagnostic metadata includes `storage` (database path, row counts, commit timings, settings writes, log appends),
+`persistence` (pending/error) and `recovery` (previous run/marker error), alongside logger buffered bytes and
+dropped lines. "Clear local data" clears the history in memory and in the database.
 
 ## Isolated verification
 

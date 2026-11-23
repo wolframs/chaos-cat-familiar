@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import {writeJsonAtomic} from '../../../packages/core/src/atomic-json.js';
+import {writeJsonAtomicAsync} from '../../../packages/core/src/atomic-json.js';
 import {CODEX_OBSERVATION_EVENTS} from './codex-hook-adapter.js';
 
 const MARKER='CCF session observation (codex)';
@@ -44,23 +44,24 @@ export class CodexHookInstaller{
     }
     return next;
   }
-  save(next,raw){
+  // Rename retries wait asynchronously (process-split step 6: none blocks the core's event loop).
+  async save(next,raw){
     const current=fs.existsSync(this.filePath)?fs.readFileSync(this.filePath,'utf8'):null;
     if(current!==raw)throw new Error('Codex hooks configuration changed during installation; original file preserved');
     const serialized=JSON.stringify(next,null,2);
-    if(serialized!==raw)writeJsonAtomic(this.filePath,next);
+    if(serialized!==raw)await writeJsonAtomicAsync(this.filePath,next);
     return serialized!==raw;
   }
-  install({userInitiated}={}){
+  async install({userInitiated}={}){
     if(userInitiated!==true)throw new Error('Codex hook installation requires an explicit user action');
     const{source,raw}=this.read();const next=this.withoutOwned(source);
     for(const event of CODEX_OBSERVATION_EVENTS){next.hooks[event]??=[];next.hooks[event].push({matcher:'',hooks:[{type:'command',command:this.command,commandWindows:this.command,statusMessage:MARKER,timeout:3,async:event!=='SessionEnd'}]});}
-    const changed=this.save(next,raw);
+    const changed=await this.save(next,raw);
     return{ok:true,changed,filePath:this.filePath,registeredEvents:[...CODEX_OBSERVATION_EVENTS],trustReviewRequired:true,trustStatus:'not-inspected',nextAction:'Open /hooks in Codex to review and trust these exact definitions; hooks must also be enabled in the selected configuration.'};
   }
-  remove({userInitiated}={}){
+  async remove({userInitiated}={}){
     if(userInitiated!==true)throw new Error('Codex hook removal requires an explicit user action');
     const{source,raw}=this.read();if(raw===null)return{ok:true,changed:false,filePath:this.filePath};
-    return{ok:true,changed:this.save(this.withoutOwned(source),raw),filePath:this.filePath};
+    return{ok:true,changed:await this.save(this.withoutOwned(source),raw),filePath:this.filePath};
   }
 }

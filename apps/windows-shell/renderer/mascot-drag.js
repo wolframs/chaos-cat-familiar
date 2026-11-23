@@ -1,3 +1,8 @@
+// The cat's right-click opens the shared companion menu in mascot mode, never in the middle of a drag.
+export function catMenuAllowed({ mascotMode, dragging }) {
+  return Boolean(mascotMode) && !dragging;
+}
+
 export function createMascotDrag({ element, enabled, getBounds, setBounds, setDragging,
   requestFrame = requestAnimationFrame, cancelFrame = cancelAnimationFrame }) {
   let pending = null;

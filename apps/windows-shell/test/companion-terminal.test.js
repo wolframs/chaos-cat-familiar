@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import headless from "@xterm/headless";
 import { readTerminalScreen } from "../services/terminal-screen.js";
-import { renderCompanionTerminal } from "../renderer/companion-terminal.js";
+import { renderCompanionTerminal, terminalSelectionText } from "../renderer/companion-terminal.js";
 
 function write(terminal, text) {
   return new Promise((resolve) => terminal.write(text, resolve));
@@ -261,4 +261,65 @@ test("shifted history with a common styled prefix reuses all remaining rows", ()
   assert.equal(element.children[0], second);
   assert.equal(created - before, 4);
   assert.ok(element.textContent.startsWith("shared prefix value 1\nshared prefix value 2"));
+});
+
+test("plain-text URLs become link spans, across a wrap too; OSC 8 runs keep their own target", () => {
+  const element = new Element("pre", document);
+  const url = "https://issues.example/example-org/Project/workitems/edit/1234?view=full";
+  const lines = [
+    [{ text: "● The ticket: ", foreground: "#ded6ea" }, { text: url.slice(0, 36), bold: true }],
+    [{ text: "  " + url.slice(36) + "." }],
+    [{ text: "  " }, { text: "handoff", link: "file:///C:/x/handoff.md" }, { text: " and https://a.example/b" }]
+  ];
+  renderCompanionTerminal(element, { lines }, { columns: 50 });
+  const linked = element.children.flatMap((row) => row.children.filter((span) => span.dataset.link));
+  assert.deepEqual(linked.map((span) => [span.textContent, span.dataset.link]), [
+    [url.slice(0, 36), url], [url.slice(36), url],
+    ["handoff", "file:///C:/x/handoff.md"], ["https://a.example/b", "https://a.example/b"]]);
+  assert.equal(linked[0].style.fontWeight, "700", "the link keeps its run's style");
+  assert.equal(element.textContent, lines.map((runs) => runs.map((run) => run.text).join("")).join("\n"));
+  const [, before] = element.children[0].children;
+  assert.equal(before.dataset.link, undefined);
+  assert.equal(element.children[1].children.at(-1).textContent, ".", "the full stop stays outside the link");
+});
+
+test("live rows through xterm: a markdown link's URL cut over three rows links on all three", async () => {
+  // 2026-11-20: Claude's text wrapped at 73 columns, a cut-off tool call header above ran to the edge.
+  const columns = 76;
+  const terminal = new headless.Terminal({ cols: columns, rows: 12, allowProposedApi: true });
+  try {
+    const rows = ["  tried them for real yet: test link (https://wiki.example.org/bin/view/H",
+      "  andbooks/Desktop-Tools/Companions/Chaos-Cat-Familiar/Settings/Conversat",
+      "  ion-Pane/Links%20and%20Copy/Overviews/)"];
+    await write(terminal, `\x1b[32m●\x1b[0m \x1b[1m${"Bash(cd /c/Users/someone/repos/work-companion && python tools/watch.py --until".slice(0, columns - 3)}…\x1b[0m\r\n`
+      + "  ⎿  Running in the background (↓ to manage)\r\n\r\n"
+      + "\x1b[37m●\x1b[0m Back after the restart, and I'm watching for events again. Clickable\r\n"
+      + "  links and clean copy should work in the chat pane now, but nobody has\r\n" + rows.join("\r\n"));
+    const element = new Element("pre", document);
+    renderCompanionTerminal(element, readTerminalScreen(terminal), { columns });
+    const linked = element.children.flatMap((row) => row.children.filter((span) => span.dataset.link));
+    const url = "https://wiki.example.org/bin/view/Handbooks/Desktop-Tools/Companions/Chaos-Cat-Familiar/Settings/"
+      + "Conversation-Pane/Links%20and%20Copy/Overviews/";
+    assert.deepEqual(linked.map((span) => span.textContent), ["https://wiki.example.org/bin/view/H",
+      "andbooks/Desktop-Tools/Companions/Chaos-Cat-Familiar/Settings/Conversat", "ion-Pane/Links%20and%20Copy/Overviews/"]);
+    assert.ok(linked.every((span) => span.dataset.link === url && span.className === "terminal-link"));
+  } finally { terminal.dispose(); }
+});
+
+test("copying a selection gives the joined text of the selected rows", () => {
+  const element = new Element("pre", document);
+  const rows = ["● First part of a sentence that runs to the", "  edge and continues here.", "",
+    "  - bullet one", "  - bullet two   "];
+  renderCompanionTerminal(element, { lines: rows.map((text) => [{ text }]) });
+  const selection = (startNode, startOffset, endNode, endOffset) => ({ isCollapsed: false, rangeCount: 1,
+    getRangeAt: () => ({ startContainer: startNode, startOffset, endContainer: endNode, endOffset }) });
+  const run = (row) => element.children[row].children[1];
+  assert.equal(terminalSelectionText(element, selection(element, 0, element, rows.length), { columns: 45 }),
+    "● First part of a sentence that runs to the edge and continues here.\n\n  - bullet one\n  - bullet two");
+  // From the start of row 3's text to the start of row 4: row 4 is not part of it.
+  assert.equal(terminalSelectionText(element, selection(run(3), 0, element.children[4], 0), { columns: 45 }),
+    "- bullet one");
+  assert.equal(terminalSelectionText(element, { isCollapsed: true, rangeCount: 1 }), null);
+  const outside = new Element("span", document);
+  assert.equal(terminalSelectionText(element, selection(outside, 0, run(1), 1)), null, "outside the rows: browser copy");
 });

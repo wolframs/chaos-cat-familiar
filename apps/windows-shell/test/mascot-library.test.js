@@ -15,7 +15,7 @@ function createTempFilePath() {
   return path.join(dir, "mascots.json");
 }
 
-test("mascot library seeds the bundled default mascot", () => {
+test("mascot library seeds the bundled default mascot", async () => {
   const library = new MascotLibrary({
     filePath: createTempFilePath(),
     cacheDir: path.join(os.tmpdir(), "ccf-mascots-cache-seed"),
@@ -24,7 +24,7 @@ test("mascot library seeds the bundled default mascot", () => {
     }
   });
 
-  const state = library.list();
+  const state = await library.list();
   assert.equal(state.mascots.length >= 1, true);
   assert.equal(state.currentMascotId, "bundled:chaos-cat");
   const familiar = state.mascots.find((item) => item.id === "bundled:chaos-cat");
@@ -46,7 +46,7 @@ test("mascot library seeds the bundled default mascot", () => {
   assert.equal(state.mascots.find((item) => item.slug === "masko").name, "Masko");
 });
 
-test("mascot library migrates only the previous bundled default and refreshes bundled familiar assets", () => {
+test("mascot library migrates only the previous bundled default and refreshes bundled familiar assets", async () => {
   const filePath = createTempFilePath();
   fs.writeFileSync(filePath, JSON.stringify({
     version: 1,
@@ -57,17 +57,17 @@ test("mascot library migrates only the previous bundled default and refreshes bu
     ]
   }));
   const library = new MascotLibrary({ filePath, fetchImpl: async () => { throw new Error("should not fetch"); } });
-  const state = library.list();
+  const state = await library.list();
   assert.equal(state.currentMascotId, "bundled:chaos-cat");
   const familiar = state.mascots.find((item) => item.id === "bundled:chaos-cat");
   assert.equal(familiar.name, "Chaos Cat Familiar");
   assert.equal(fileURLToPath(familiar.config.edges[0].videos.webm).endsWith(path.join("mascots", "chaos-cat", "loops", "idle.webm")), true);
   assert.equal(JSON.parse(fs.readFileSync(filePath, "utf8")).version, 2);
-  assert.equal(library.select("bundled:masko").ok, true);
-  assert.equal(new MascotLibrary({ filePath }).list().currentMascotId, "bundled:masko");
+  assert.equal((await library.select("bundled:masko")).ok, true);
+  assert.equal((await new MascotLibrary({ filePath }).list()).currentMascotId, "bundled:masko");
 });
 
-test("mascot library preserves an explicitly selected alternative", () => {
+test("mascot library preserves an explicitly selected alternative", async () => {
   const filePath = createTempFilePath();
   fs.writeFileSync(filePath, JSON.stringify({
     version: 1,
@@ -75,8 +75,8 @@ test("mascot library preserves an explicitly selected alternative", () => {
     mascots: [{ id: "custom:buddy", slug: "buddy", source: "custom", config: { name: "Buddy" } }]
   }));
   const library = new MascotLibrary({ filePath, fetchImpl: async () => { throw new Error("should not fetch"); } });
-  assert.equal(library.list().currentMascotId, "custom:buddy");
-  assert.equal(library.list().mascots.some((item) => item.id === "bundled:chaos-cat"), true);
+  assert.equal((await library.list()).currentMascotId, "custom:buddy");
+  assert.equal((await library.list()).mascots.some((item) => item.id === "bundled:chaos-cat"), true);
 });
 
 test("mascot library installs a remote mascot by slug and selects it", async () => {
@@ -112,7 +112,7 @@ test("mascot library installs a remote mascot by slug and selects it", async () 
   assert.equal(result.ok, true);
   assert.equal(result.action, "installed");
   assert.equal(result.mascot.slug, "remote-rusty");
-  assert.equal(library.current().id, "slug:remote-rusty");
+  assert.equal((await library.current()).id, "slug:remote-rusty");
   assert.equal(result.mascot.config.nodes[0].transparentThumbnailUrl.startsWith("file://"), true);
   assert.equal(result.mascot.config.edges[0].videos.webm.startsWith("file://"), true);
   assert.equal(fs.existsSync(fileURLToPath(result.mascot.config.edges[0].videos.webm)), true);
@@ -145,7 +145,7 @@ test("mascot library reselects an existing mascot instead of duplicating it", as
 
   assert.equal(second.ok, true);
   assert.equal(second.action, "selected_existing");
-  assert.equal(library.list().mascots.filter((item) => item.slug === "rusty").length, 1);
+  assert.equal((await library.list()).mascots.filter((item) => item.slug === "rusty").length, 1);
 });
 
 test("mascot library can warm bundled mascot assets into the local cache", async () => {
@@ -166,7 +166,7 @@ test("mascot library can warm bundled mascot assets into the local cache", async
   assert.equal(warmed.config.edges[0].videos.webm.startsWith("file://"), true);
 });
 
-test("mascot library imports, updates, and removes custom mascots", () => {
+test("mascot library imports, updates, and removes custom mascots", async () => {
   const library = new MascotLibrary({
     filePath: createTempFilePath(),
     cacheDir: path.join(os.tmpdir(), "ccf-mascots-cache-custom"),
@@ -175,7 +175,7 @@ test("mascot library imports, updates, and removes custom mascots", () => {
     }
   });
 
-  const imported = library.importConfig({
+  const imported = await library.importConfig({
     version: "2.0",
     name: "Desk Buddy",
     initialNode: "idle",
@@ -186,14 +186,28 @@ test("mascot library imports, updates, and removes custom mascots", () => {
   assert.equal(imported.ok, true);
   assert.equal(imported.action, "imported");
 
-  const updated = library.updateConfig(imported.mascot.id, {
+  const updated = await library.updateConfig(imported.mascot.id, {
     ...imported.mascot.config,
     name: "Desk Buddy 2"
   });
   assert.equal(updated.ok, true);
   assert.equal(updated.mascot.name, "Desk Buddy 2");
 
-  const removed = library.remove(imported.mascot.id);
+  const removed = await library.remove(imported.mascot.id);
   assert.equal(removed.ok, true);
-  assert.equal(library.list().mascots.some((item) => item.id === imported.mascot.id), false);
+  assert.equal((await library.list()).mascots.some((item) => item.id === imported.mascot.id), false);
+});
+
+// Process-split plan, step 7: main owns the library, so it loads on first use and writes asynchronously, in order.
+test("mascot library loads lazily and writes its changes in order, the newest last", async () => {
+  const filePath = createTempFilePath();
+  const library = new MascotLibrary({ filePath, fetchImpl: async () => { throw new Error("should not fetch"); } });
+  assert.equal(fs.existsSync(filePath), false, "nothing read or written before first use");
+  const stats = await library.cacheStats();
+  assert.deepEqual(stats, { exists: false, bytes: 0, files: 0 });
+  const ids = (await library.list()).mascots.map((item) => item.id);
+  const selections = [library.select(ids[1]), library.select(ids[0]), library.select(ids[2])];
+  await Promise.all(selections);
+  assert.equal(JSON.parse(fs.readFileSync(filePath, "utf8")).currentMascotId, ids[2]);
+  assert.equal((await new MascotLibrary({ filePath }).list()).currentMascotId, ids[2]);
 });

@@ -10,20 +10,22 @@ import {
   shell,
   screen,
   globalShortcut,
-  Notification
+  Notification,
+  utilityProcess,
+  MessageChannelMain
 } from "electron";
 import { createWindowsShellRuntime } from "./runtime/windows-shell-runtime.js";
-import fs from "node:fs";
 import path from "node:path";
 
-// Keep test Chromium data and the single-instance lock outside the live profile.
+// Keep test Chromium data and the single-instance lock outside the live profile. Electron takes only an existing folder
+// and main does no file work of its own (process-split plan, step 7): the smoke scripts create electron-user-data under
+// the app-data override; without it, the override itself holds Chromium's data.
 if (process.env.CCF_TEST_MODE === "1") {
   if (!process.env.CCF_APPDATA_OVERRIDE || !process.env.CCF_HOME_OVERRIDE) {
     throw new Error("Test mode requires isolated home and app-data overrides");
   }
-  const testUserData = path.join(process.env.CCF_APPDATA_OVERRIDE, "electron-user-data");
-  fs.mkdirSync(testUserData, { recursive: true });
-  app.setPath("userData", testUserData);
+  try { app.setPath("userData", path.join(process.env.CCF_APPDATA_OVERRIDE, "electron-user-data")); }
+  catch { app.setPath("userData", process.env.CCF_APPDATA_OVERRIDE); }
 }
 
 const hasSingleInstanceLock = app.requestSingleInstanceLock();
@@ -44,7 +46,11 @@ if (!hasSingleInstanceLock) {
       shell,
       screen,
       globalShortcut,
-      Notification
+      Notification,
+      // The core (hook server, approvals, settings, state, log) runs in a utility process (process-split plan, step 3).
+      utilityProcess,
+      // A window's own state or frames port straight from a utility process (step 5).
+      MessageChannelMain
     }
   });
 

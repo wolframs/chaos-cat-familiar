@@ -1,0 +1,42 @@
+{
+  "name": "approvals: held PermissionRequest answered over HTTP and in the app, with extras, defer and restore",
+  "steps": [
+    { "do": "hook", "body": { "hook_event_name": "SessionStart", "session_id": "s-approve", "cwd": "C:/fixture/alpha" }, "expect": { "status": 200, "body": { "ok": true } } },
+    { "do": "permission", "as": "bash", "waitApprovals": 1,
+      "body": { "hook_event_name": "PermissionRequest", "session_id": "s-approve", "cwd": "C:/fixture/alpha", "tool_name": "Bash", "tool_input": { "command": "ls" } } },
+    { "do": "state", "expect": {
+      "approvals": [ { "session": "s-approve", "tool": "Bash", "collapsed": false } ],
+      "sessions": [ { "id": "s-approve", "status": "active", "phase": "running" } ],
+      "notifications": [ { "category": "permission_request", "isRead": false, "outcome": "pending" }, { "category": "session_lifecycle", "isRead": false, "outcome": "allowed" } ],
+      "unread": 2,
+      "events": [ "PermissionRequest", "SessionStart" ] } },
+    { "do": "shell", "expect": { "toasts": [ "Session Started", "Claude Needs Approval" ], "overlayShows": 1 } },
+    { "do": "decide", "via": "http", "approval": 0, "action": "allow", "expect": { "status": 200, "body": { "ok": true } } },
+    { "do": "response", "of": "bash", "expect": { "status": 200, "body": { "hookSpecificOutput": { "hookEventName": "PermissionRequest", "decision": { "behavior": "allow" } } } } },
+    { "do": "state", "expect": { "approvals": [], "notifications": [ { "outcome": "allowed" }, { "category": "session_lifecycle" } ] } },
+
+    { "do": "permission", "as": "question", "waitApprovals": 1,
+      "body": { "hook_event_name": "PermissionRequest", "session_id": "s-approve", "tool_name": "AskUserQuestion", "tool_input": { "questions": [ { "question": "Which?" } ] } } },
+    { "do": "decide", "via": "http", "approval": 0, "action": "allowWithAnswers", "payload": { "answers": { "Which?": "First" } }, "expect": { "status": 200 } },
+    { "do": "response", "of": "question", "expect": { "status": 200, "body": { "hookSpecificOutput": { "decision": { "behavior": "allow", "updatedInput": { "answers": { "Which?": "First" } } } } } } },
+
+    { "do": "permission", "as": "perms", "waitApprovals": 1,
+      "body": { "hook_event_name": "PermissionRequest", "session_id": "s-approve", "tool_name": "Edit", "tool_input": { "file_path": "C:/fixture/alpha/a.txt" } } },
+    { "do": "decide", "via": "http", "approval": 0, "action": "allowWithPermissions", "payload": { "updatedPermissions": [ { "type": "setMode", "mode": "acceptEdits" } ] } },
+    { "do": "response", "of": "perms", "expect": { "status": 200, "body": { "hookSpecificOutput": { "decision": { "behavior": "allow", "updatedPermissions": [ { "type": "setMode", "mode": "acceptEdits" } ] } } } } },
+
+    { "do": "permission", "as": "deferred", "waitApprovals": 1,
+      "body": { "hook_event_name": "PermissionRequest", "session_id": "s-approve", "tool_name": "Write", "tool_input": { "file_path": "C:/fixture/alpha/b.txt" } } },
+    { "do": "decide", "via": "app", "approval": 0, "action": "defer", "expect": { "resolved": true } },
+    { "do": "state", "expect": { "approvals": [ { "tool": "Write", "collapsed": true } ], "notifications": [ { "outcome": "pending" }, { "outcome": "allowed" }, { "outcome": "allowed" }, { "outcome": "allowed" }, { "category": "session_lifecycle" } ] } },
+    { "do": "decide", "via": "app", "approval": 0, "action": "restore" },
+    { "do": "state", "expect": { "approvals": [ { "tool": "Write", "collapsed": false } ] } },
+    { "do": "decide", "via": "app", "approval": 0, "action": "deny", "expect": { "resolved": true } },
+    { "do": "response", "of": "deferred", "expect": { "status": 200, "body": { "hookSpecificOutput": { "decision": { "behavior": "deny" } } } } },
+    { "do": "state", "expect": { "approvals": [], "notifications": [ { "outcome": "denied" }, { "outcome": "allowed" }, { "outcome": "allowed" }, { "outcome": "allowed" }, { "category": "session_lifecycle" } ] } },
+
+    { "do": "decideUnknown", "action": "allow", "expect": { "status": 404, "body": { "error": "approval_not_found" } } },
+    { "do": "post", "route": "/approvals/x/explode", "body": {}, "expect": { "status": 400, "body": { "error": "invalid_approval_action" } } },
+    { "do": "shell", "expect": { "toasts": [ "Session Started", "Claude Needs Approval", "Claude Has a Question", "Claude Needs Approval", "Claude Needs Approval" ], "overlayShows": 4 } }
+  ]
+}

@@ -1,7 +1,9 @@
-import { MascotStateMachine, mascotInputsFromState } from "./mascot-state-machine.js";
+import { COMPACTING_STALE_MS, MascotStateMachine, STALE_RUNNING_MS, SUBAGENT_STALE_MS, mascotInputsFromState, withBusyFlavor } from "./mascot-state-machine.js";
 import { companionAttention, sessionIdentity, syncCompanionPlayback, syncCompanionMedia } from "./companion-attention.js";
 import { sessionActivationTarget } from "./session-activation.js";
-import { createMascotDrag } from "./mascot-drag.js";
+import { catMenuAllowed, createMascotDrag } from "./mascot-drag.js";
+import { subscribeCoreState } from "./view-subscription.js";
+import { OVERLAY_TOPICS, composeOverlayState } from "./overlay-state.js";
 
 const approvalsRoot = document.getElementById("approvals");
 const status = document.getElementById("status");
@@ -40,6 +42,7 @@ let lastMascotUrl = null;
 let mascotVideoReady = false;
 let mascotVideoFallbackUrl = null;
 let lastMascotAttentionKind = null;
+const busyFlavor = { until: 0, thinking: false };
 let latestClaudeRuntime = null;
 let claudeRuntimeRefresh = { inFlight: null, lastLoadedAt: 0 };
 let stateExpiryTimer = null;
@@ -137,7 +140,7 @@ function renderMascot(state) {
     return;
   }
   const attention = companionAttention(state);
-  const inputs = mascotInputsFromState(state);
+  const inputs = withBusyFlavor(mascotInputsFromState(state), busyFlavor);
   const animateWhenVisible = currentMascot.config?.animateWhenVisible === true;
   const shouldPlay = animateWhenVisible || attention.kind === "working";
   const interrupted = animateWhenVisible && mascot.phase === "transition"
@@ -550,18 +553,38 @@ function renderContextPanel(state) {
   });
 }
 
+// The revision of the core state this window drew, for effects that wait for it (process-split plan, step 5).
+let reportedRevision = null;
+function reportRevision(state) {
+  const revision = state?.meta?.revision;
+  if (!Number.isInteger(revision)) return;
+  const key = `${state.meta.epoch}:${revision}`;
+  if (key === reportedRevision) return;
+  reportedRevision = key;
+  window.ccf.reportViewRevision?.({ view: "overlay", revision, epoch: state.meta.epoch ?? null });
+}
+
+// Only a state that was drawn is reported (review of step 5, P2: a hidden window returned before drawing, and a failed
+// draw reported all the same, so "show the overlay" could show a window without the approval it was shown for).
 function renderState(state) {
   latestState = state;
+  renderStateNow(state);
+  reportRevision(state);
+}
+
+// A hidden overlay still draws its panels (main may show it for an approval at any moment); only the mascot settles
+// without playback.
+function renderStateNow(state) {
   if (document.hidden) {
     ensureMascotRuntime();
-    mascot?.settleWithoutPlayback(mascotInputsFromState(state));
+    mascot?.settleWithoutPlayback(withBusyFlavor(mascotInputsFromState(state), busyFlavor));
     syncCompanionMedia(mascotVideo, null, companionAttention(state), true);
     lastMascotUrl = null;
     mascotVideoReady = false;
     mascotVideoFallbackUrl = null;
-    return;
+  } else {
+    renderMascot(state);
   }
-  renderMascot(state);
   renderStatsPill(state);
   renderToast(state);
   renderSessionSwitcher(state);
@@ -584,7 +607,7 @@ function renderState(state) {
           : "Waiting for assistant activity";
   collapsed.textContent = `${collapsedCount} deferred`;
   activeSessions.textContent = String(state.sessions.filter((session) => session.status === "active").length);
-  recentEvents.textContent = String(state.events.length);
+  recentEvents.textContent = String(state.meta?.eventCount ?? state.events?.length ?? 0);
   connectionHint.textContent =
     !topSession && (latestClaudeRuntime?.claudeProcesses?.length ?? 0) > 0
       ? latestClaudeRuntime.hookExists
@@ -627,8 +650,9 @@ function scheduleStateExpiry(state) {
   stateExpiryTimer = null;
   const now = Date.now();
   const deadlines = [state.ui?.overlay?.toast?.visibleUntil, ...state.sessions
-    .filter((item) => item.status === "active" && item.phase === "running" && !(item.activeSubagentCount > 0))
-    .map((item) => new Date(item.lastEventAt).getTime() + 90_001)]
+    .filter((item) => item.status === "active" && (item.phase === "running" || item.activeSubagentCount > 0 || item.isCompacting))
+    .map((item) => new Date(item.lastEventAt).getTime() + 1
+      + (item.activeSubagentCount > 0 ? SUBAGENT_STALE_MS : item.isCompacting ? COMPACTING_STALE_MS : STALE_RUNNING_MS))]
     .filter((value) => Number.isFinite(value) && value > now);
   if (deadlines.length && !document.hidden) {
     stateExpiryTimer = setTimeout(() => renderState(latestState), Math.min(...deadlines) - now);
@@ -710,7 +734,12 @@ statsPill.addEventListener("click", async () => {
 overlayRoot.addEventListener("contextmenu", (event) => {
   event.preventDefault();
   // The developer overlay carries its own controls panel (snooze, mode, opacity).
-  if (!mascotModeEnabled()) window.ccf.showOverlayContextMenu().catch(() => {});
+  if (!mascotModeEnabled()) { window.ccf.showOverlayContextMenu().catch(() => {}); return; }
+  // Mascot mode: the tray's menu at the cursor (main builds it). Optional: a page reloaded under an older preload
+  // has no such call and does nothing.
+  if (catMenuAllowed({ mascotMode: true, dragging: document.body.classList.contains("dragging") })) {
+    window.ccf.showCompanionMenu?.()?.catch?.(() => {});
+  }
 });
 
 window.addEventListener("keydown", async (event) => {
@@ -739,13 +768,23 @@ mascotShell.addEventListener("pointerup", mascotDrag.end);
 mascotShell.addEventListener("pointercancel", mascotDrag.end);
 mascotShell.addEventListener("lostpointercapture", mascotDrag.end);
 
-window.ccf.onState(async (state) => {
+// The core's sessions and approvals on the overlay's own port (also while hidden: main may show it for an approval at
+// any moment), main's part as ccf:shell-state (process-split plan, step 7). A state is drawn once both are there.
+let coreState = null;
+let shellState = null;
+const live = subscribeCoreState({ topics: OVERLAY_TOPICS, whileVisible: false,
+  onState: (value) => { coreState = value; return drawLive(); },
+  onError: (error) => logUi("warn", "Overlay state subscription failed", { error: String(error?.message ?? error) }) });
+window.ccf.onShellState?.((value) => { shellState = value; void drawLive(); });
+
+async function drawLive() {
+  if (!coreState || !shellState) return;
   if (!latestSettings) await loadSettings();
   if (!mascotLibrary) {
     await loadMascotLibrary();
   }
-  renderState(state);
-});
+  renderState(composeOverlayState(coreState, shellState, live?.mirror));
+}
 window.ccf.onMascotLibrary(async (value) => {
   mascotLibrary = value;
   ensureMascotRuntime();
@@ -762,10 +801,10 @@ window.ccf.onSettings((value) => {
 });
 
 async function refresh() {
-  latestState = await window.ccf.getState();
+  shellState ??= await window.ccf.getShellState();
   await loadSettings();
   await loadMascotLibrary();
-  renderState(latestState);
+  await drawLive();
   // Process diagnosis can involve PowerShell; the companion must paint first.
   refreshClaudeRuntimeIfStale(0).then(() => {
     if (latestState) renderState(latestState);

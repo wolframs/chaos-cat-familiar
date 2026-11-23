@@ -15,7 +15,9 @@ from.
   script in a separate repository of mine; that repository is not published.
 
 `docs/STATUS.md` here is a trimmed copy of the working one: the passages about my own machine are
-out. Where test fixtures carried a real Windows user folder, that folder is now called `dev`.
+out. Where test fixtures carried a real Windows user folder, that folder is now called `dev`; links
+and project names from my day job in test fixtures are replaced by neutral examples of the same
+length.
 
 ## Credit and licence
 

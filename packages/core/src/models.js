@@ -1,6 +1,10 @@
 import path from "node:path";
 import { HookEventType } from "./event-types.js";
 
+// A prompt sent by his cache-warm plugin every 55 idle minutes ("[Cache warm maintenance] ..."): not his, not work.
+// Only the flag leaves normalizeEvent, never the prompt text.
+export const MAINTENANCE_PROMPT_PREFIX = "[Cache warm maintenance]";
+
 export function normalizeEvent(payload, receivedAt = new Date()) {
   const backend=payload.backend==='codex'?'codex':'claude';
   const conversationId=payload.session_id??null;
@@ -8,6 +12,7 @@ export function normalizeEvent(payload, receivedAt = new Date()) {
     id: payload.event_id ?? crypto.randomUUID(),
     backend,conversationId,
     observationOnly:payload.observation_only===true,
+    maintenance: typeof payload.prompt === "string" && payload.prompt.startsWith(MAINTENANCE_PROMPT_PREFIX),
     integrationSource:payload.integration_source??null,
     turnId:payload.turn_id??null,
     hookEventName: payload.hook_event_name,

@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import vm from "node:vm";
 import { companionAttention, sessionIdentity, syncCompanionPlayback, syncCompanionMedia } from "../renderer/companion-attention.js";
-import { MascotStateMachine, mascotInputsFromState } from "../renderer/mascot-state-machine.js";
+import { COMPACTING_STALE_MS, MascotStateMachine, STALE_RUNNING_MS, SUBAGENT_STALE_MS, mascotInputsFromState, withBusyFlavor } from "../renderer/mascot-state-machine.js";
 import { defaultMascotConfig } from "../renderer/default-mascot-config.js";
 import { loadBundledMascots } from "../services/bundled-mascots.js";
 import { createMascotDrag } from "../renderer/mascot-drag.js";
@@ -21,9 +21,11 @@ test("overlay settles static waiting and hidden states before resuming working m
   }
   const document = { hidden: false, body: node("body"), getElementById: node, querySelector: node, addEventListener() {} };
   const context = vm.createContext({
-    document, window: { ccf: { onState() {}, onSettings() {}, onMascotLibrary() {}, getState() { return new Promise(() => {}); }, getSettings() { return new Promise(() => {}); }, getMascotLibrary() { return new Promise(() => {}); } }, addEventListener() {} },
-    MascotStateMachine, mascotInputsFromState, companionAttention, sessionIdentity, syncCompanionPlayback, syncCompanionMedia,
-    createMascotDrag, defaultMascotConfig, setTimeout() {}, clearTimeout() {}, Date, console
+    document, window: { ccf: { onShellState() {}, onSettings() {}, onMascotLibrary() {}, getShellState() { return new Promise(() => {}); }, getSettings() { return new Promise(() => {}); }, getMascotLibrary() { return new Promise(() => {}); } }, addEventListener() {} },
+    MascotStateMachine, mascotInputsFromState, withBusyFlavor, companionAttention, sessionIdentity, syncCompanionPlayback, syncCompanionMedia,
+    COMPACTING_STALE_MS, STALE_RUNNING_MS, SUBAGENT_STALE_MS,
+    createMascotDrag, defaultMascotConfig, setTimeout() {}, clearTimeout() {}, Date, console,
+    subscribeCoreState: () => ({ mirror: null }), OVERLAY_TOPICS: [], composeOverlayState: (core) => core
   });
   vm.runInContext(source, context);
   vm.runInContext(`mascotLibrary = { mascots: [{ id: "test", name: "Test", config: defaultMascotConfig }] };`, context);
@@ -53,18 +55,24 @@ test("visible Chaos Cat animates Idle and Needs Attention and releases video whe
     if (!nodes.has(id)) nodes.set(id, {
       style: {}, classList: { toggle() {}, add() {}, remove() {} }, addEventListener() {},
       getAttribute(name) { return this[name] ?? null; }, removeAttribute(name) { delete this[name]; },
-      load() {}, paused: true, pause() { this.paused = true; }, play() { this.paused = false; return Promise.resolve(); }
+      load() {}, paused: true, pause() { this.paused = true; }, play() { this.paused = false; return Promise.resolve(); },
+      // A hidden overlay draws its approval cards too (review of step 5).
+      querySelector() { return null; }, querySelectorAll() { return []; }, append() {}
     });
     return nodes.get(id);
   }
-  const document = { hidden: false, body: node("body"), getElementById: node, querySelector: node, addEventListener() {} };
+  let created = 0;
+  const document = { hidden: false, body: node("body"), getElementById: node, querySelector: node, addEventListener() {},
+    createElement: () => node(`created-${++created}`) };
   const context = vm.createContext({
-    document, window: { ccf: { onState() {}, onSettings() {}, onMascotLibrary() {}, getState() { return new Promise(() => {}); }, getSettings() { return new Promise(() => {}); }, getMascotLibrary() { return new Promise(() => {}); } }, addEventListener() {} },
-    MascotStateMachine, mascotInputsFromState, companionAttention, sessionIdentity, syncCompanionPlayback, syncCompanionMedia,
-    createMascotDrag, setTimeout() {}, clearTimeout() {}, Date, console
+    document, window: { ccf: { onShellState() {}, onSettings() {}, onMascotLibrary() {}, getShellState() { return new Promise(() => {}); }, getSettings() { return new Promise(() => {}); }, getMascotLibrary() { return new Promise(() => {}); } }, addEventListener() {} },
+    MascotStateMachine, mascotInputsFromState, withBusyFlavor, companionAttention, sessionIdentity, syncCompanionPlayback, syncCompanionMedia,
+    COMPACTING_STALE_MS, STALE_RUNNING_MS, SUBAGENT_STALE_MS,
+    createMascotDrag, setTimeout() {}, clearTimeout() {}, Date, console,
+    subscribeCoreState: () => ({ mirror: null }), OVERLAY_TOPICS: [], composeOverlayState: (core) => core
   });
   vm.runInContext(source, context);
-  const config = loadBundledMascots().find((item) => item.slug === "chaos-cat").config;
+  const config = (await loadBundledMascots()).find((item) => item.slug === "chaos-cat").config;
   context.chaosConfig = config;
   vm.runInContext(`mascotLibrary = { currentMascotId: "bundled:chaos-cat", mascots: [{ id: "bundled:chaos-cat", name: "Chaos Cat Familiar", config: chaosConfig }] };`, context);
   context.idle = { sessions: [], approvals: [] };
@@ -97,13 +105,16 @@ test("overlay uses hook updates without polling or process detection and pauses 
   let settingsLoads = 0;
   const document = { hidden: false, body: node("body"), getElementById: node, querySelector: node, createElement: () => node("created"), addEventListener(name, fn) { documentHandlers[name] = fn; } };
   const ccf = {
-    async getState() { return state; },
+    async getShellState() { return { meta: {}, ui: state.ui }; },
     async getSettings() { settingsLoads += 1; return { appShellMode: "mascot" }; },
     async getMascotLibrary() { return { mascots: [] }; },
     async detectClaudeRuntime() { detections += 1; return new Promise(() => {}); },
-    onState(fn) { handlers.state = fn; }, onSettings() {}, onMascotLibrary() {}
+    onShellState() {}, onSettings() {}, onMascotLibrary() {}
   };
+  // The overlay's port (step 7) delivers the core's part; here it is the whole state the page draws.
+  const subscribeCoreState = ({ onState }) => { handlers.state = onState; queueMicrotask(() => onState(state)); return { mirror: null }; };
   vm.runInNewContext(source, {
+    subscribeCoreState, OVERLAY_TOPICS: [], composeOverlayState: (core) => core,
     document, window: { ccf, addEventListener() {} }, companionAttention, sessionIdentity, syncCompanionPlayback, syncCompanionMedia, createMascotDrag,
     setTimeout(fn) { timers.add(fn); return fn; }, clearTimeout(fn) { timers.delete(fn); },
     setInterval() { throw new Error("idle polling must not return"); }, Date, console

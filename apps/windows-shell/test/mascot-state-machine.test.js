@@ -1,7 +1,11 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { defaultMascotConfig } from "../renderer/default-mascot-config.js";
-import { MascotStateMachine, mascotInputsFromState } from "../renderer/mascot-state-machine.js";
+import fs from "node:fs";
+import {
+  COMPACTING_STALE_MS, MascotStateMachine, STALE_RUNNING_MS, SUBAGENT_STALE_MS, mascotInputsFromState,
+  BUSY_FLAVOR_MIN_MS, BUSY_FLAVOR_MAX_MS, withBusyFlavor
+} from "../renderer/mascot-state-machine.js";
 
 test("suppressed playback settles approval state and never replays its stale transition", () => {
   const mascot = new MascotStateMachine(defaultMascotConfig);
@@ -111,6 +115,86 @@ test("mascot inputs keep sessions with active subagents in working state", () =>
 
   assert.equal(inputs["claudeCode::isWorking"], true);
   assert.equal(inputs["claudeCode::isIdle"], false);
+});
+
+test("a subagent count left behind by a lost SubagentStop stops holding the cat in working", () => {
+  // Seen 2026-11-03: a session dead since 2026-10-30 kept activeSubagentCount 1
+  // (its last SubagentStart never got a SubagentStop) and the cat never idled again.
+  const inputs = mascotInputsFromState({
+    approvals: [],
+    sessions: [
+      {
+        id: "dead-with-subagent",
+        status: "active",
+        phase: "running",
+        isCompacting: false,
+        activeSubagentCount: 1,
+        lastEventAt: new Date(Date.now() - 4 * 24 * 60 * 60_000)
+      }
+    ]
+  });
+
+  assert.equal(inputs["claudeCode::isWorking"], false);
+  assert.equal(inputs["claudeCode::isIdle"], true);
+});
+
+const running = (toolsInFlight, ageMs = 0, extra = {}) => ({ id: `s${Math.random()}`, status: "active", phase: "running",
+  isCompacting: false, activeSubagentCount: 0, toolsInFlight, lastEventAt: new Date(Date.now() - ageMs), ...extra });
+
+test("a running session without a tool in flight is thinking, with one it is running a tool", () => {
+  const thinking = mascotInputsFromState({ sessions: [running([])] });
+  assert.equal(thinking["claudeCode::isThinking"], true);
+  assert.equal(thinking["claudeCode::isToolRunning"], false);
+  assert.equal(thinking["claudeCode::isWorking"], true);
+  assert.equal(thinking["claudeCode::isIdle"], false);
+  const tool = mascotInputsFromState({ sessions: [running(["toolu_1"])] });
+  assert.equal(tool["claudeCode::isToolRunning"], true);
+  assert.equal(tool["claudeCode::isThinking"], false);
+});
+
+test("across sessions a running tool beats thinking", () => {
+  const inputs = mascotInputsFromState({ sessions: [running([]), running(["toolu_1"]), running([], 0, { isCompacting: true, phase: "compacting" })] });
+  assert.equal(inputs["claudeCode::isToolRunning"], true);
+  assert.equal(inputs["claudeCode::isThinking"], false);
+});
+
+test("thinking goes stale like the other running states, and sessions without tool tracking read as tool work", () => {
+  const stale = mascotInputsFromState({ sessions: [running([], STALE_RUNNING_MS + 5_000)] });
+  assert.equal(stale["claudeCode::isThinking"], false);
+  assert.equal(stale["claudeCode::isIdle"], true);
+  const untracked = mascotInputsFromState({ sessions: [running(undefined)] });
+  assert.equal(untracked["claudeCode::isToolRunning"], true);
+  assert.equal(untracked["claudeCode::isThinking"], false);
+});
+
+test("compaction reads as thinking until its window runs out", () => {
+  const compacting = (ageMs) => mascotInputsFromState({ sessions: [running([], ageMs, { phase: "compacting", isCompacting: true })] });
+  assert.equal(compacting(60_000)["claudeCode::isThinking"], true);
+  assert.equal(compacting(60_000)["claudeCode::isCompacting"], true);
+  const stale = compacting(COMPACTING_STALE_MS + 5_000);
+  assert.equal(stale["claudeCode::isCompacting"], false);
+  assert.equal(stale["claudeCode::isThinking"], false);
+  assert.equal(stale["claudeCode::isIdle"], true);
+});
+
+test("the chaos cat maps tool work, model generation, idle and approvals onto its four nodes", () => {
+  const config = JSON.parse(fs.readFileSync(new URL("../assets/mascots/chaos-cat.json", import.meta.url), "utf8"));
+  const machine = new MascotStateMachine(config);
+  const settle = (state) => machine.settleWithoutPlayback(mascotInputsFromState(state)).nodeName;
+  assert.equal(settle({ sessions: [running(["toolu_1"])] }), "Working");
+  assert.equal(settle({ sessions: [running([])] }), "Thinking");
+  assert.equal(settle({ sessions: [running([]), running(["toolu_1"])] }), "Working");
+  assert.equal(settle({ sessions: [running([], 0, { phase: "compacting", isCompacting: true })] }), "Thinking");
+  assert.equal(settle({ sessions: [running([])], approvals: [{ id: "a" }] }), "Needs Attention");
+  assert.equal(settle({ sessions: [running([], STALE_RUNNING_MS + 5_000)] }), "Idle");
+  assert.equal(settle({ sessions: [] }), "Idle");
+});
+
+test("subagent sessions stay working through a long quiet tool call, up to the subagent window", () => {
+  const session = (ageMs) => ({ sessions: [{ id: "s", status: "active", phase: "idle",
+    activeSubagentCount: 1, lastEventAt: new Date(Date.now() - ageMs) }] });
+  assert.equal(mascotInputsFromState(session(SUBAGENT_STALE_MS - 5_000))["claudeCode::isWorking"], true);
+  assert.equal(mascotInputsFromState(session(SUBAGENT_STALE_MS + 5_000))["claudeCode::isWorking"], false);
 });
 
 test("mascot state machine starts in the configured idle loop", () => {
@@ -857,4 +941,31 @@ test("nodeTime just below boundary stays in loop", () => {
   now = 4999; // just below boundary
   const snap = mascot.applyInputs({});
   assert.equal(snap.phase, "loop");
+});
+
+test("busy flavour: a tool-running stretch shows Working or Thinking 50/50, sticky until its dwell ends", () => {
+  const busy = mascotInputsFromState({ sessions: [{ status: "active", phase: "running", lastEventAt: Date.now(), toolsInFlight: ["Bash"] }] });
+  assert.equal(busy["agent::isToolRunning"], true);
+  const flavor = { until: 0, thinking: false };
+  const thinking = withBusyFlavor(busy, flavor, { now: 1000, random: () => 0.2 });
+  assert.equal(thinking["agent::isThinking"], true);
+  assert.equal(thinking["claudeCode::isToolRunning"], false);
+  assert.ok(flavor.until >= 1000 + BUSY_FLAVOR_MIN_MS && flavor.until <= 1000 + BUSY_FLAVOR_MAX_MS);
+  // Within the dwell the roll holds, whatever the dice say.
+  assert.equal(withBusyFlavor(busy, flavor, { now: 2000, random: () => 0.9 })["agent::isThinking"], true);
+  // After the dwell it re-rolls.
+  const working = withBusyFlavor(busy, flavor, { now: flavor.until, random: () => 0.9 });
+  assert.equal(working["agent::isToolRunning"], true);
+  assert.equal(working, busy);
+  // Idle resets, so the next stretch rolls fresh; the caller's inputs are never mutated.
+  withBusyFlavor(mascotInputsFromState({}), flavor);
+  assert.equal(flavor.until, 0);
+  assert.equal(busy["agent::isThinking"], false);
+});
+
+test("busy flavour leaves compacting and model-generating alone", () => {
+  const flavor = { until: 0, thinking: false };
+  const generating = mascotInputsFromState({ sessions: [{ status: "active", phase: "running", lastEventAt: Date.now(), toolsInFlight: [] }] });
+  assert.equal(withBusyFlavor(generating, flavor, { random: () => 0.9 }), generating);
+  assert.equal(flavor.until, 0);
 });

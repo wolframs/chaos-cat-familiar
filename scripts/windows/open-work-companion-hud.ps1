@@ -12,7 +12,12 @@ function Get-CcfConnection {
     if (-not [IO.File]::Exists($SettingsPath)) { return $null }
     $json = $null
     try {
-        $json = [Text.Json.JsonDocument]::Parse([IO.File]::ReadAllText($SettingsPath))
+        # Share delete as well: File.ReadAllText's FileShare.Read made CCF's atomic settings rename fail with
+        # EPERM while this loop polled during CCF startup (2026-11-05).
+        $stream = [IO.FileStream]::new($SettingsPath, [IO.FileMode]::Open, [IO.FileAccess]::Read,
+            [IO.FileShare]::ReadWrite -bor [IO.FileShare]::Delete)
+        try { $text = [IO.StreamReader]::new($stream).ReadToEnd() } finally { $stream.Dispose() }
+        $json = [Text.Json.JsonDocument]::Parse($text)
         $portElement = [Text.Json.JsonElement]::new()
         $tokenElement = [Text.Json.JsonElement]::new()
         if (-not $json.RootElement.TryGetProperty('port', [ref]$portElement)) { return $null }

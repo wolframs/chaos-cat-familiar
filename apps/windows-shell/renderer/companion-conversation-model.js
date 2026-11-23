@@ -12,6 +12,7 @@ export function normalizeCompanionSnapshot(value, previous) {
 
   return {
     backend: source.backend === "codex" ? "codex" : "claude",
+    ptyId: typeof source.ptyId === "string" ? source.ptyId : null,
     debugUi: source.debugUi === true,
     connecting:source.phase==='connecting'||source.starting===true,
     switching:source.switching===true,

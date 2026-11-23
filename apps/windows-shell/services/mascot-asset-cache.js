@@ -1,4 +1,4 @@
-import fs from "node:fs";
+import fs from "node:fs/promises";
 import path from "node:path";
 import crypto from "node:crypto";
 import { pathToFileURL } from "node:url";
@@ -18,6 +18,13 @@ function stableFileName(rawUrl) {
   return `${hash}${extensionForUrl(rawUrl)}`;
 }
 
+const CACHED_FILE = /^[a-f0-9]{12}\.[a-z0-9]{1,8}$/i;
+
+async function exists(filePath) {
+  try { await fs.access(filePath); return true; } catch { return false; }
+}
+
+// Downloads of remote mascot assets, kept as files. Main owns it (the library), so no call blocks (step 7).
 export class MascotAssetCache {
   constructor({ cacheDir, fetchImpl = globalThis.fetch, logger, maxCacheBytes = 128 * 1024 * 1024, maxAssetBytes = 16 * 1024 * 1024, timeoutMs = 30_000 } = {}) {
     this.cacheDir = cacheDir;
@@ -31,6 +38,21 @@ export class MascotAssetCache {
     this.controllers = new Set();
     this.disposed = false;
     this.cachedBytes = null;
+  }
+
+  // What the cache holds (its own files only; diagnostics show it): one directory listing, not a tree walk.
+  async stats() {
+    if (!this.cacheDir) return { exists: false, bytes: 0, files: 0 };
+    let entries;
+    try { entries = await fs.readdir(this.cacheDir, { withFileTypes: true }); }
+    catch (error) { if (error.code === "ENOENT") return { exists: false, bytes: 0, files: 0 }; throw error; }
+    let bytes = 0;
+    let files = 0;
+    for (const entry of entries) {
+      if (!entry.isFile() || !CACHED_FILE.test(entry.name)) continue;
+      try { bytes += (await fs.stat(path.join(this.cacheDir, entry.name))).size; files += 1; } catch { /* removed meanwhile */ }
+    }
+    return { exists: true, bytes, files };
   }
 
   dispose() {
@@ -115,14 +137,10 @@ export class MascotAssetCache {
     this.controllers.add(controller);
     const timeout = setTimeout(() => controller.abort(), this.timeoutMs);
     try {
-      fs.mkdirSync(this.cacheDir, { recursive: true });
-      if (this.cachedBytes === null) {
-        this.cachedBytes = fs.readdirSync(this.cacheDir, { withFileTypes: true })
-          .filter((entry) => entry.isFile() && /^[a-f0-9]{12}\.[a-z0-9]{1,8}$/i.test(entry.name))
-          .reduce((total, entry) => total + fs.statSync(path.join(this.cacheDir, entry.name)).size, 0);
-      }
+      await fs.mkdir(this.cacheDir, { recursive: true });
+      if (this.cachedBytes === null) this.cachedBytes = (await this.stats()).bytes;
       const destination = path.join(this.cacheDir, stableFileName(rawUrl));
-      if (!fs.existsSync(destination)) {
+      if (!(await exists(destination))) {
         if (this.cachedBytes >= this.maxCacheBytes) return rawUrl;
         const response = await abortable(this.fetchImpl(rawUrl, { signal: controller.signal }), controller.signal);
         if (!response?.ok) {
@@ -130,7 +148,7 @@ export class MascotAssetCache {
         }
         const bytes = await this.#readBytes(response, controller.signal);
         if (this.disposed || controller.signal.aborted || this.cachedBytes + bytes.length > this.maxCacheBytes) return rawUrl;
-        fs.writeFileSync(destination, bytes);
+        await fs.writeFile(destination, bytes);
         this.cachedBytes += bytes.length;
       }
       return pathToFileURL(destination).toString();

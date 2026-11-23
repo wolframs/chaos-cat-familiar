@@ -1,8 +1,9 @@
 import { normalizeCompanionSnapshot, normalizeSubmission, shouldSubmitOnKeydown, submissionStatusText, backendSwitchGuard } from "./companion-conversation-model.js";
-import { hideClaudePromptBox, renderCompanionTerminal } from "./companion-terminal.js";
+import { hideClaudePromptBox, renderCompanionTerminal, terminalSelectionText } from "./companion-terminal.js";
 import { installCompanionTextSize } from "./companion-text-size.js";
 import { promptKeySequence, terminalViewportSize } from "./companion-terminal-controls.js";
 import { createStructuredConversation } from "./companion-structured.js";
+import { subscribeFrames } from "./view-subscription.js";
 
 const elements = Object.fromEntries(["title", "presence", "start", "prompt", "draft", "send", "stop", "shutdown", "endDay", "consoleScreen", "attach", "attachments", "requests", "jumpLatest", "submissionStatus", "backend", "uncertainActions", "reconnect", "acknowledgeUnknown", "loadOlder", "backendReason"]
   .map((id) => [id, document.getElementById(id)]));
@@ -32,6 +33,34 @@ async function action(payload) {
   return result;
 }
 
+// Raw terminal input is lossless and ordered (process-split plan, step 5): one keystroke batch in flight, whatever is
+// typed meanwhile joins the next batch, so the queue stays bounded without dropping or reordering a key. Each batch
+// names the PTY it was typed for (review of step 5): keys waiting behind a refused batch, or typed for a PTY that has
+// since been replaced, are dropped with a visible note instead of reaching another session.
+let rawInflight = false;
+let rawPending = null;   // { ptyId, text }
+function dropRaw(reason) {
+  rawPending = null;
+  showError(new Error(reason));
+}
+function sendRaw(text) {
+  const ptyId = snapshot.ptyId ?? null;
+  if (rawPending && rawPending.ptyId !== ptyId) dropRaw("Keys typed for the previous terminal session were not sent.");
+  if (text) rawPending = { ptyId, text: (rawPending?.text ?? "") + text };
+  if (rawInflight || !rawPending) return;
+  const batch = rawPending;
+  rawPending = null;
+  rawInflight = true;
+  action({ action: "raw-input", text: batch.text, ptyId: batch.ptyId }).then(() => {
+    rawInflight = false;
+    if (rawPending) sendRaw("");
+  }, (error) => {
+    rawInflight = false;
+    showError(error);
+    if (rawPending) dropRaw(`${localError} Keys typed after it were not sent.`);
+  });
+}
+
 function showError(error) {
   localError = String(error?.message ?? error);
   elements.prompt.textContent = localError;
@@ -47,16 +76,24 @@ function recoverUncertainDraft() {
   elements.draft.value = submission.text;
 }
 
+// The pane's size in terminal cells; the PTY gets exactly this on resize.
+function paneSize() {
+  const style = getComputedStyle(elements.consoleScreen);
+  measure.font = `${style.fontWeight} ${style.fontSize} ${style.fontFamily}`;
+  return terminalViewportSize(elements.consoleScreen.clientWidth, elements.consoleScreen.clientHeight,
+    measure.measureText("M").width, parseFloat(style.lineHeight) || parseFloat(style.fontSize) * 1.45);
+}
+
+// undefined while the pane is not laid out: the rows then judge their width alone.
+function paneColumns() { return elements.consoleScreen.clientWidth > 0 ? paneSize().cols : undefined; }
+
 function scheduleResize() {
   if (snapshot.backend === "codex") return;
   if (!snapshot.connected) { clearTimeout(resizeTimer); resizeTimer = undefined; lastSize = ""; return; }
   if (resizeTimer !== undefined) return;
   resizeTimer = setTimeout(async () => {
     resizeTimer = undefined;
-    const style = getComputedStyle(elements.consoleScreen);
-    measure.font = `${style.fontWeight} ${style.fontSize} ${style.fontFamily}`;
-    const size = terminalViewportSize(elements.consoleScreen.clientWidth, elements.consoleScreen.clientHeight,
-      measure.measureText("M").width, parseFloat(style.lineHeight) || parseFloat(style.fontSize) * 1.45);
+    const size = paneSize();
     const key = `${size.cols}:${size.rows}`;
     if (key === lastSize || !snapshot.connected) return;
     lastSize = key;
@@ -153,7 +190,8 @@ function render() {
     const readingAnchor = followsOutput ? null : scroller.children[Math.floor(readingPosition / lineHeight)];
     const anchorTop = readingAnchor?.getBoundingClientRect().top;
     // The composer below replaces Claude's own input box; see hideClaudePromptBox.
-    const changed = renderCompanionTerminal(scroller, terminal.lines ? { ...terminal, lines: hideClaudePromptBox(terminal.lines) } : terminal);
+    const changed = renderCompanionTerminal(scroller, terminal.lines ? { ...terminal, lines: hideClaudePromptBox(terminal.lines) } : terminal,
+      { columns: paneColumns() });
     if (changed) {
       if (followsOutput) scroller.scrollTop = scroller.scrollHeight;
       else if (readingAnchor?.parentNode === scroller) scroller.scrollTop += readingAnchor.getBoundingClientRect().top - anchorTop;
@@ -199,10 +237,13 @@ elements.draft.addEventListener("input", () => {
 });
 elements.draft.addEventListener("keydown", (event) => {
   if (!snapshot.connected || busy || snapshot.switching) return;
+  // Ctrl+C over a selection in the pane copies; it never becomes Claude's interrupt.
+  const selection = event.ctrlKey ? window.getSelection?.() : null;
+  if (selection && !selection.isCollapsed && elements.consoleScreen.contains?.(selection.anchorNode)) return;
   const raw = snapshot.backend === "claude" ? promptKeySequence(event, elements.draft.value.length === 0 && snapshot.attachments.length === 0) : null;
   if (raw !== null) {
     event.preventDefault();
-    void action({ action: "raw-input", text: raw }).catch(showError);
+    sendRaw(raw);
   } else if (shouldSubmitOnKeydown(event)) {
     event.preventDefault();
     void sendMessage();
@@ -340,8 +381,33 @@ elements.consoleScreen.addEventListener("click", (event) => {
   if (link) { void action({ action: "open-link", url: link }).catch(showError); return; }
   if (snapshot.backend === "claude" && snapshot.connected) elements.draft.focus();
 });
+// Copying from Claude's terminal drops the row padding and joins the rows Claude's own wrapping split
+// (terminalSelectionText). Ctrl+C, Ctrl+Insert and any Copy command all raise this event; it reaches the
+// pane when the selection starts in it.
+elements.consoleScreen.addEventListener("copy", (event) => {
+  if (snapshot.backend !== "claude" || !event.clipboardData) return;
+  const text = terminalSelectionText(elements.consoleScreen, window.getSelection(), { columns: paneColumns() });
+  if (text === null) return;
+  event.clipboardData.setData("text/plain", text);
+  event.preventDefault();
+});
+// The companion's whole frames (terminal screen included) come on this window's own port while it is visible (step 5);
+// main sends only what it alone knows (step 7): the offline view after a crash, the debug flag, and in test mode a
+// preview, which stands in for the port's frames until main replaces it.
+let debugUi = false;
+let previewing = false;
+let receivedFrame = false;
+const frames = subscribeFrames({ service: "companion", whileVisible: true,
+  onFrame: (frame) => {
+    if (previewing) return;
+    receivedFrame = true;
+    snapshot = normalizeCompanionSnapshot({ ...frame, debugUi }, snapshot);
+    render();
+  } });
 window.ccf?.onCompanion?.((value) => {
   receivedPush = true;
+  previewing = value?.preview === true;
+  debugUi = value?.debugUi === true;
   snapshot = normalizeCompanionSnapshot(value, snapshot);
   render();
 });
@@ -353,7 +419,12 @@ document.fonts?.ready.then(scheduleResize);
 window.addEventListener("beforeunload", () => { clearTimeout(resizeTimer); observer.disconnect(); textSize.dispose(); structured.dispose(); });
 render();
 window.ccf?.getCompanion?.().then((value) => {
-  if (receivedPush) return;
+  debugUi = value?.debugUi === true;
+  // Main's own push is newer than this answer. A port frame is not, when the answer is a test preview: the preview
+  // stands until main replaces it (a reload under a preview got the live frame first and kept it).
+  if (receivedPush || (receivedFrame && value?.preview !== true)) return;
+  previewing = value?.preview === true;
   snapshot = normalizeCompanionSnapshot(value, snapshot);
   render();
 }).catch(showError);
+window.addEventListener("beforeunload", () => frames?.close());

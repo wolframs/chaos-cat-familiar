@@ -61,43 +61,96 @@ function toTimestamp(value) {
   return null;
 }
 
+export const STALE_RUNNING_MS = 90_000;
+// Subagent tool hooks carry the parent's session id, so a live subagent keeps
+// lastEventAt fresh. The longer window covers one quiet long tool call inside a
+// subagent; past it, the count is a lost SubagentStop (dead session, CCF closed
+// while the relay dropped the event), not work.
+export const SUBAGENT_STALE_MS = 10 * 60_000;
+// Compaction emits no hooks between PreCompact and PostCompact and can take minutes;
+// past this window a missing PostCompact must not hold the cat in Thinking.
+export const COMPACTING_STALE_MS = 5 * 60_000;
+
+function isFresh(lastEventAt, now, windowMs) {
+  return lastEventAt == null || now - lastEventAt <= windowMs;
+}
+
 export function mascotInputsFromState(state) {
   const activeSessions = (state?.sessions ?? []).filter((session) => session.status === "active");
   const visibleApprovals = (state?.approvals ?? []).filter((approval) => !approval.collapsed);
-  const staleRunningMs = 90_000;
   const now = Date.now();
-  const compacting = activeSessions.some((session) => session.isCompacting || session.phase === "compacting");
+  const compacting = activeSessions.some((session) => (session.isCompacting || session.phase === "compacting")
+    && isFresh(toTimestamp(session.lastEventAt), now, COMPACTING_STALE_MS));
+  let toolRunning = false;
   const workingSessions = activeSessions.filter((session) => {
-    if ((session.activeSubagentCount ?? 0) > 0) {
+    const lastEventAt = toTimestamp(session.lastEventAt);
+    if ((session.activeSubagentCount ?? 0) > 0 && isFresh(lastEventAt, now, SUBAGENT_STALE_MS)) {
+      toolRunning = true;
       return true;
     }
     if (session.phase !== "running") {
       return false;
     }
-    const lastEventAt = toTimestamp(session.lastEventAt);
-    if (lastEventAt == null) {
-      return true;
+    const hosted = session.observationAuthority === "hosted";
+    if (!hosted && !isFresh(lastEventAt, now, STALE_RUNNING_MS)) {
+      return false;
     }
-    return session.observationAuthority==='hosted'||now - lastEventAt <= staleRunningMs;
+    // Sessions without tool tracking (hosted Codex, older state) keep reading as tool work.
+    if (hosted || !Array.isArray(session.toolsInFlight) || session.toolsInFlight.length > 0) {
+      toolRunning = true;
+    }
+    return true;
   });
 
   const isWorking = workingSessions.length > 0;
   const isIdle = activeSessions.length === 0 || (!compacting && workingSessions.length === 0);
+  // Model busy without a tool: generating between prompt/tool result and the next tool, or
+  // compacting. Any session running a tool wins, so Thinking only shows when none is.
+  const isThinking = !toolRunning && (compacting || isWorking);
   const isAlert = visibleApprovals.length > 0||(state?.hostedCompanion?.pendingRequestCount??0)>0;
   const sessionCount = activeSessions.length;
 
-  return {
-    "claudeCode::isWorking": isWorking,
-    "claudeCode::isIdle": isIdle,
-    "claudeCode::isAlert": isAlert,
-    "claudeCode::isCompacting": compacting,
-    "claudeCode::sessionCount": sessionCount,
-    "agent::isWorking": isWorking,
-    "agent::isIdle": isIdle,
-    "agent::isAlert": isAlert,
-    "agent::isCompacting": compacting,
-    "agent::sessionCount": sessionCount
-  };
+  const inputs = {};
+  for (const prefix of ["claudeCode", "agent"]) {
+    inputs[`${prefix}::isWorking`] = isWorking;
+    inputs[`${prefix}::isToolRunning`] = toolRunning;
+    inputs[`${prefix}::isThinking`] = isThinking;
+    inputs[`${prefix}::isIdle`] = isIdle;
+    inputs[`${prefix}::isAlert`] = isAlert;
+    inputs[`${prefix}::isCompacting`] = compacting;
+    inputs[`${prefix}::sessionCount`] = sessionCount;
+  }
+  return inputs;
+}
+
+// Busy flavour, for the animation only: with sessions running tools most of the day, Working always won and
+// Thinking almost never played. While a tool runs, each busy stretch picks Working or Thinking 50/50 and
+// re-rolls after a random dwell; model generating and compacting stay Thinking. The caller keeps `flavor`
+// across renders; idle resets it. Labels and attention read mascotInputsFromState directly and are unaffected.
+export const BUSY_FLAVOR_MIN_MS = 45_000;
+export const BUSY_FLAVOR_MAX_MS = 150_000;
+
+export function withBusyFlavor(inputs, flavor, { now = Date.now(), random = Math.random } = {}) {
+  if (inputs["agent::isIdle"]) {
+    flavor.until = 0;
+    return inputs;
+  }
+  if (!inputs["agent::isToolRunning"] || inputs["agent::isCompacting"]) {
+    return inputs;
+  }
+  if (!flavor.until || now >= flavor.until) {
+    flavor.thinking = random() < 0.5;
+    flavor.until = now + BUSY_FLAVOR_MIN_MS + random() * (BUSY_FLAVOR_MAX_MS - BUSY_FLAVOR_MIN_MS);
+  }
+  if (!flavor.thinking) {
+    return inputs;
+  }
+  const flavored = { ...inputs };
+  for (const prefix of ["claudeCode", "agent"]) {
+    flavored[`${prefix}::isToolRunning`] = false;
+    flavored[`${prefix}::isThinking`] = true;
+  }
+  return flavored;
 }
 
 export class MascotStateMachine {
@@ -324,7 +377,7 @@ export class MascotStateMachine {
   }
 
   static #stateInputs = new Set([
-    "isWorking", "isIdle", "isAlert", "isCompacting", "sessionCount"
+    "isWorking", "isToolRunning", "isThinking", "isIdle", "isAlert", "isCompacting", "sessionCount"
   ]);
 
   #resetTriggers() {

@@ -114,6 +114,8 @@ export async function runDesignReloadSmoke({ repoRoot, appData, runtimeMetadataP
     assert.equal(appearance.shadow, "none");
     assert.equal(appearance.bodyBackground, "rgba(0, 0, 0, 0)");
     assert.equal(appearance.header, false);
+    // Test mode never starts Claude: windows-shell-smoke.mjs starts this run without CCF_TEST_COMPANION_FIXTURE, so
+    // Start is refused (with a fixture it would run the fixture; the default smoke checks that).
     const startError = await conversation.evaluate(`window.ccf.companionAction({action:'start'}).then(() => 'unexpected start', error => error.message)`);
     assert.match(startError, /disabled in test mode/);
     const overlayState = await overlay.evaluate(`(() => {
@@ -123,7 +125,8 @@ export async function runDesignReloadSmoke({ repoRoot, appData, runtimeMetadataP
     })()`);
     assert.equal(overlayState.prevented, true);
     assert.equal(overlayState.bubble, false);
-    const uiState = await overlay.evaluate(`window.ccf.getState()`);
+    // Main's part of the overlay's state (the shell UI state; step 7: no window gets the whole state from main).
+    const uiState = await overlay.evaluate(`window.ccf.getShellState()`);
     assert.notEqual(uiState.ui?.overlay?.contextMenu?.isOpen, true);
 
     const stagedImage = await conversation.evaluate(`(() => {
@@ -136,7 +139,11 @@ export async function runDesignReloadSmoke({ repoRoot, appData, runtimeMetadataP
       return event.defaultPrevented;
     })()`);
     assert.equal(stagedImage, true, "pasting an image stages it instead of pasting text");
-    await until(() => conversation.evaluate(`document.querySelectorAll('.attachment').length === 1 && !document.getElementById('send').disabled`), "image-only draft ready to send");
+    await until(() => conversation.evaluate(`document.querySelectorAll('.attachment').length === 1 && !document.getElementById('send').disabled`), "image-only draft ready to send")
+      .catch(async (error) => {
+        const state = await conversation.evaluate(`window.ccf.getCompanion().then(s => JSON.stringify({ connected: s.connected, backend: s.backend, phase: s.phase, attachments: s.attachments, n: document.querySelectorAll('.attachment').length, send: document.getElementById('send').disabled, attach: document.getElementById('attach').disabled, start: document.getElementById('start').disabled }))`).catch((e) => String(e));
+        throw new Error(`${error.message}: ${state}`);
+      });
     const attached = await conversation.evaluate(`window.ccf.getCompanion().then(snapshot => snapshot.attachments[0])`);
     assert.ok(fs.existsSync(attached.path), "pasted image saved in isolated CCF data");
     await until(() => conversation.evaluate(`document.querySelector('.attachment img')?.naturalWidth > 0`), "pasted image thumbnail decoded");

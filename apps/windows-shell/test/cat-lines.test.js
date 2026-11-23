@@ -4,7 +4,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { CatLines, TIERS, fillPlaceholders, inNightWindow, loadCatLinesCatalog } from "../services/cat-lines.js";
 
-const catalog = loadCatLinesCatalog(path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "assets", "cat-lines.json"));
+const catalog = await loadCatLinesCatalog(path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "assets", "cat-lines.json"));
 const DAY = new Date(2026, 10, 2, 14, 0).getTime();
 const NIGHT = new Date(2026, 10, 2, 23, 30).getTime();
 
